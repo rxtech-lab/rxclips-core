@@ -1,4 +1,3 @@
-import Common
 import JavaScriptCore
 
 public struct JSEngine<Api: APIProtocol & JSExport> {

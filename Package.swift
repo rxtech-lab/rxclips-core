@@ -4,7 +4,7 @@ import CompilerPluginSupport
 import PackageDescription
 
 let package = Package(
-    name: "rxclips-core",
+    name: "RxClipsCore",
     platforms: [
         .macOS(.v15),
         .iOS(.v18),
@@ -12,8 +12,8 @@ let package = Package(
     products: [
         // Products define the executables and libraries a package produces, making them visible to other packages.
         .library(
-            name: "rxclips-core",
-            targets: ["rxclips-core"]),
+            name: "RxClipsCore",
+            targets: ["RxClipsCore"]),
         .library(
             name: "JSEngine",
             targets: ["JSEngine", "JSEngineMacro"]
@@ -22,7 +22,6 @@ let package = Package(
             name: "JSEngineMacro",
             targets: ["JSEngineMacro"]
         ),
-        .library(name: "Common", targets: ["Common"]),
     ],
     dependencies: [
         .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "600.0.0-latest")
@@ -31,13 +30,10 @@ let package = Package(
         // Targets are the basic building blocks of a package, defining a module or a test suite.
         // Targets can depend on other targets in this package and products from dependencies.
         .target(
-            name: "rxclips-core"),
+            name: "RxClipsCore"),
         .testTarget(
-            name: "rxclips-coreTests",
-            dependencies: ["rxclips-core"]
-        ),
-        .target(
-            name: "Common"
+            name: "RxClipsCoreTests",
+            dependencies: ["RxClipsCore"]
         ),
         .macro(
             name: "JSEngineMacros",
@@ -51,7 +47,7 @@ let package = Package(
         .target(name: "JSEngineMacro", dependencies: ["JSEngineMacros"]),
         .target(
             name: "JSEngine",
-            dependencies: ["Common"]
+            dependencies: []
         ),
         .testTarget(
             name: "JSEngineTests",

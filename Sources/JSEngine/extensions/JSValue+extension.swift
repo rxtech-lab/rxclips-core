@@ -1,4 +1,3 @@
-import Common
 import JavaScriptCore
 
 extension JSValue {

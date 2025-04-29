@@ -1,3 +1,5 @@
 rxclips-core/.index-build
 .DS_Store
 rxclips-core/.build
+.index-build
+.build

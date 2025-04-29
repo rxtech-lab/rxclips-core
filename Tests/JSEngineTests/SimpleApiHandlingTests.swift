@@ -5,7 +5,6 @@
 //  Created by Qiwei Li on 2/18/25.
 //
 
-import Common
 import JSEngineMacro
 import JavaScriptCore
 import Testing
