@@ -24,16 +24,25 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "600.0.0-latest")
+        .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "600.0.0-latest"),
+        .package(url: "https://github.com/sirily11/swift-json-schema", from: "1.0.2"),
+        .package(url: "https://github.com/jpsim/Yams", from: "5.3.1"),
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
         // Targets can depend on other targets in this package and products from dependencies.
         .target(
-            name: "RxClipsCore"),
+            name: "RxClipsCore",
+            dependencies: [
+                .product(name: "JSONSchema", package: "swift-json-schema")
+            ]
+        ),
         .testTarget(
             name: "RxClipsCoreTests",
-            dependencies: ["RxClipsCore"]
+            dependencies: [
+                "RxClipsCore",
+                .product(name: "Yams", package: "Yams"),
+            ]
         ),
         .macro(
             name: "JSEngineMacros",
