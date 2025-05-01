@@ -2,8 +2,7 @@ import XCTest
 
 @testable import RxClipsCore
 
-class EngineTests: XCTestCase {
-
+class EngineParseRepositoryTests: XCTestCase {
     @MainActor
     func testParseRepository() async {
         let repository = Repository(
@@ -168,5 +167,61 @@ class EngineTests: XCTestCase {
         XCTAssertEqual(scriptExecutionSteps[3].bashScript?.command, "echo 'step 2'")
         XCTAssertEqual(scriptExecutionSteps[4].bashScript?.command, "echo 'step 3'")
         XCTAssertEqual(scriptExecutionSteps[5].bashScript?.command, "echo 'after step 3'")
+    }
+}
+
+class EngineExecuteTests: XCTestCase {
+    @MainActor
+    func testExecuteEngineWithLifecycleAndSteps() async throws {
+        // Create repository with numbered echo commands for easy testing
+        let repository = Repository(
+            globalConfig: .init(templatePath: "./"),
+            permissions: [],
+            lifecycle: [
+                .init(script: .bash(.init(command: "echo \"1\"")), on: .setup),
+                .init(script: .bash(.init(command: "echo \"5\"")), on: .teardown),
+            ],
+            steps: [
+                .init(
+                    name: "Main Step",
+                    script: .bash(.init(command: "echo \"3\"")),
+                    lifecycle: [
+                        .init(script: .bash(.init(command: "echo \"2\"")), on: .beforeStep),
+                        .init(script: .bash(.init(command: "echo \"4\"")), on: .afterStep),
+                    ]
+                )
+            ]
+        )
+
+        // Initialize and parse repository
+        let engine = Engine(repository: repository)
+        await engine.parseRepository()
+
+        // Execute and collect results
+        let executeStream = try await engine.execute()
+
+        var resultOutputs: [String] = []
+        var nextStepCount = 0
+
+        for try await result in executeStream {
+            switch result {
+            case .bash(let bashResult):
+                resultOutputs.append(
+                    bashResult.output.trimmingCharacters(in: .whitespacesAndNewlines))
+            case .nextStep:
+                nextStepCount += 1
+            }
+        }
+
+        // Verify results
+        XCTAssertEqual(nextStepCount, 5)  // Should have 5 step events
+        XCTAssertEqual(resultOutputs.count, 5)  // Should have 5 outputs
+
+        // Verify the output order
+        XCTAssertTrue(resultOutputs.contains("1"))
+        XCTAssertTrue(resultOutputs.contains("2"))
+        XCTAssertTrue(resultOutputs.contains("3"))
+        XCTAssertTrue(resultOutputs.contains("4"))
+        XCTAssertTrue(resultOutputs.contains("5"))
     }
 }

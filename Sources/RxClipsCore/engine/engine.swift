@@ -49,4 +49,31 @@ public actor Engine {
             self.scriptExecutionSteps.append(contentsOf: sortedSteps.map { $0.script })
         }
     }
+
+    internal func executeScript(script: Script) async throws -> any AsyncSequence<
+        ExecuteResult, Error
+    > {
+        switch script {
+        case .bash(let bashScript):
+            let engine = BashEngine(commandExecutor: .init())
+            return try await engine.run(command: bashScript)
+
+        default:
+            throw ExecuteError.unsupportedScriptType(script.type)
+        }
+    }
+
+    public func execute() throws -> AsyncThrowingStream<ExecuteResult, Error> {
+        return AsyncThrowingStream { continuation in
+            Task {
+                for script in self.scriptExecutionSteps {
+                    for try await result in try await self.executeScript(script: script) {
+                        continuation.yield(result)
+                    }
+                    continuation.yield(.nextStep(.init(scriptId: script.id)))
+                }
+                continuation.finish()
+            }
+        }
+    }
 }

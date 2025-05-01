@@ -46,7 +46,7 @@ public enum Permission: String, Codable {
     case writeVariable
 }
 
-public enum Script: Codable {
+public enum Script: Identifiable, Codable {
     public var bashScript: BashScript? {
         guard case .bash(let bashScript) = self else {
             return nil
@@ -68,30 +68,44 @@ public enum Script: Codable {
         return templateScript
     }
 
-    public struct BashScript: Codable {
+    public var type: ScriptType {
+        switch self {
+        case .bash: return .bash
+        case .javascript: return .javascript
+        case .template: return .template
+        }
+    }
+
+    public struct BashScript: Identifiable, Codable {
+        public var id: String
         public var type: ScriptType = .bash
         public var command: String
 
-        public init(command: String) {
+        public init(id: String? = nil, command: String) {
+            self.id = id ?? UUID().uuidString
             self.command = command
         }
     }
 
-    public struct JavaScriptScript: Codable {
+    public struct JavaScriptScript: Identifiable, Codable {
+        public var id: String
         public var type: ScriptType = .javascript
         public var file: String
 
-        public init(file: String) {
+        public init(id: String? = nil, file: String) {
+            self.id = id ?? UUID().uuidString
             self.file = file
         }
     }
 
-    public struct TemplateScript: Codable {
+    public struct TemplateScript: Identifiable, Codable {
+        public var id: String
         public var type: ScriptType = .template
         public var file: String
         public var files: [TemplateFile]?
 
-        public init(file: String, files: [TemplateFile]? = nil) {
+        public init(id: String? = nil, file: String, files: [TemplateFile]? = nil) {
+            self.id = id ?? UUID().uuidString
             self.file = file
             self.files = files
         }
@@ -100,16 +114,27 @@ public enum Script: Codable {
     case javascript(JavaScriptScript)
     case template(TemplateScript)
 
+    public var id: String {
+        switch self {
+        case .bash(let bashScript): return bashScript.id
+        case .javascript(let javascriptScript): return javascriptScript.id
+        case .template(let templateScript): return templateScript.id
+        }
+    }
 }
 
 // MARK: - Lifecycle Event
-public struct LifecycleEvent: Codable, Comparable {
+public struct LifecycleEvent: Identifiable, Codable, Comparable {
+    public var id: String
     public var script: Script
     public var on: LifecycleEventType
+    public var results: [ExecuteResult]
 
-    public init(script: Script, on: LifecycleEventType) {
+    public init(id: String? = nil, script: Script, on: LifecycleEventType) {
+        self.id = id ?? UUID().uuidString
         self.script = script
         self.on = on
+        self.results = []
     }
 
     enum CodingKeys: String, CodingKey {
@@ -118,12 +143,15 @@ public struct LifecycleEvent: Codable, Comparable {
         case file
         case files
         case on
+        case id
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let type = try container.decode(ScriptType.self, forKey: .type)
         self.on = try container.decode(LifecycleEventType.self, forKey: .on)
+        self.id = try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
+        self.results = []
 
         switch type {
         case .bash:
@@ -210,24 +238,26 @@ public enum LifecycleEventType: String, Codable, Comparable {
 }
 
 // MARK: - Step
-public struct Step: Codable {
-    public var id: String?
+public struct Step: Identifiable, Codable {
+    public var id: String
     public var name: String?
     public var form: JSONSchema?
     public var ifCondition: String?
     public var script: Script
     public var lifecycle: [LifecycleEvent]?
+    public var results: [ExecuteResult]
 
     public init(
         id: String? = nil, name: String? = nil, form: JSONSchema? = nil,
         ifCondition: String? = nil, script: Script, lifecycle: [LifecycleEvent]? = nil
     ) {
-        self.id = id
+        self.id = id ?? UUID().uuidString
         self.name = name
         self.form = form
         self.ifCondition = ifCondition
         self.script = script
         self.lifecycle = lifecycle
+        self.results = []
     }
 
     enum CodingKeys: String, CodingKey {
@@ -245,11 +275,12 @@ public struct Step: Codable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
 
-        self.id = try container.decodeIfPresent(String.self, forKey: .id)
+        self.id = try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
         self.name = try container.decodeIfPresent(String.self, forKey: .name)
         self.form = try container.decodeIfPresent(JSONSchema.self, forKey: .form)
         self.ifCondition = try container.decodeIfPresent(String.self, forKey: .ifCondition)
         self.lifecycle = try container.decodeIfPresent([LifecycleEvent].self, forKey: .lifecycle)
+        self.results = []
 
         let type = try container.decode(ScriptType.self, forKey: .type)
 

@@ -87,8 +87,6 @@ public class BashCommandExecutor {
             process.executableURL = URL(fileURLWithPath: bashPath)
             process.arguments = ["-l", "-c", command]
 
-            print("Executing command: \(command)")
-
             // Store the process for potential cancellation
             self.currentProcesses[taskId] = process
 
@@ -111,7 +109,6 @@ public class BashCommandExecutor {
                 var processEnvironment = ProcessInfo.processInfo.environment
                 for (key, value) in environment {
                     processEnvironment[key] = value
-                    print("Setting environment variable: \(key)=\(value)")
                 }
                 process.environment = processEnvironment
             } else {
@@ -122,6 +119,7 @@ public class BashCommandExecutor {
             // Set up pipes to capture output and errors
             let pipe = Pipe()
             process.standardError = pipe
+            process.standardOutput = pipe
 
             let handler = pipe.fileHandleForReading
 
@@ -132,10 +130,8 @@ public class BashCommandExecutor {
                 let data = handle.availableData
                 if data.count > 0 {
                     if let output = String(data: data, encoding: .utf8) {
-                        DispatchQueue.main.async {
-                            continuation.yield(output)
-                            errorOutput += output
-                        }
+                        continuation.yield(output)
+                        errorOutput += output
                     }
                 }
             }
