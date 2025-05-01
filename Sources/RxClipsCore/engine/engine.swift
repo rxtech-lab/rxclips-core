@@ -22,9 +22,17 @@ extension Step {
 public actor Engine {
     internal var scriptExecutionSteps: [Script] = []
     private let repository: Repository
+    private let cwd: URL
 
-    public init(repository: Repository) {
+    /// Initialize the engine with a repository
+    /// @param repository The repository to execute
+    /// @param cwd The current working directory
+    public init(
+        repository: Repository,
+        cwd: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    ) {
         self.repository = repository
+        self.cwd = cwd
     }
 
     /// Parse the repository spec into a list of executable steps
@@ -56,7 +64,7 @@ public actor Engine {
         switch script {
         case .bash(let bashScript):
             let engine = BashEngine(commandExecutor: .init())
-            return try await engine.run(command: bashScript)
+            return try await engine.run(command: bashScript, cwd: self.cwd)
 
         default:
             throw ExecuteError.unsupportedScriptType(script.type)
@@ -69,13 +77,17 @@ public actor Engine {
     internal func executeSteps() throws -> AsyncThrowingStream<ExecuteResult, Error> {
         return AsyncThrowingStream { continuation in
             Task {
-                for script in self.scriptExecutionSteps {
-                    for try await result in try await self.executeScript(script: script) {
-                        continuation.yield(result)
+                do {
+                    for script in self.scriptExecutionSteps {
+                        for try await result in try await self.executeScript(script: script) {
+                            continuation.yield(result)
+                        }
+                        continuation.yield(.nextStep(.init(scriptId: script.id)))
                     }
-                    continuation.yield(.nextStep(.init(scriptId: script.id)))
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
                 }
-                continuation.finish()
             }
         }
     }

@@ -327,3 +327,55 @@ class EngineExecuteTests: XCTestCase {
         XCTAssertTrue(allScriptIds.contains(afterStepId), "After step script results missing")
     }
 }
+
+/// Tests for the current working directory functionality in Engine
+class EngineCwdTests: XCTestCase {
+    @MainActor
+    func testEngineUsesProvidedCwd() async throws {
+        // Use system's /bin directory
+        let systemDir = URL(fileURLWithPath: "/bin")
+
+        // Create a repository with a script that checks the current directory
+        let repository = Repository(
+            globalConfig: .init(templatePath: "./"),
+            permissions: [],
+            lifecycle: nil,
+            steps: [
+                .init(
+                    name: "Check CWD",
+                    script: .bash(.init(command: "pwd")),
+                    lifecycle: nil
+                )
+            ]
+        )
+
+        // Initialize engine with the system directory
+        let engine = Engine(repository: repository, cwd: systemDir)
+        await engine.parseRepository()
+
+        // Execute and collect results
+        let executeStream = try await engine.executeSteps()
+
+        // Collect all bash output results
+        var outputPaths: [String] = []
+        for try await result in executeStream {
+            if case .bash(let bashResult) = result {
+                outputPaths.append(
+                    bashResult.output.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+        }
+
+        // We should have exactly one output path
+        XCTAssertEqual(outputPaths.count, 1, "Expected exactly one bash command output")
+
+        // The output path should match our system directory
+        let normalizedOutputPath =
+            outputPaths.first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        XCTAssertEqual(
+            normalizedOutputPath,
+            "/bin",
+            "Expected output path to be /bin, got \(normalizedOutputPath)"
+        )
+    }
+}

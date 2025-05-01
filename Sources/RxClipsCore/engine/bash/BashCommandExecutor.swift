@@ -101,7 +101,6 @@ public class BashCommandExecutor {
             // Set working directory if provided
             if let workingDirectory = workingDirectory {
                 process.currentDirectoryPath = workingDirectory.path
-                print("Working directory: \(workingDirectory.path)")
             }
 
             // Set environment variables if provided
