@@ -198,7 +198,7 @@ class EngineExecuteTests: XCTestCase {
         await engine.parseRepository()
 
         // Execute and collect results
-        let executeStream = try await engine.execute()
+        let executeStream = try await engine.executeSteps()
 
         var resultOutputs: [String] = []
         var nextStepCount = 0
@@ -223,5 +223,107 @@ class EngineExecuteTests: XCTestCase {
         XCTAssertTrue(resultOutputs.contains("3"))
         XCTAssertTrue(resultOutputs.contains("4"))
         XCTAssertTrue(resultOutputs.contains("5"))
+    }
+
+    @MainActor
+    func testExecuteMethodUpdatesRepositoryWithResults() async throws {
+        // Create repository with simple echo commands and specific IDs
+        let globalSetupId = "global-setup"
+        let globalTeardownId = "global-teardown"
+        let mainStepId = "main-step"
+        let beforeStepId = "before-step"
+        let afterStepId = "after-step"
+
+        let repository = Repository(
+            globalConfig: .init(templatePath: "./"),
+            permissions: [],
+            lifecycle: [
+                .init(
+                    script: .bash(.init(id: globalSetupId, command: "echo \"global setup\"")),
+                    on: .setup),
+                .init(
+                    script: .bash(.init(id: globalTeardownId, command: "echo \"global teardown\"")),
+                    on: .teardown),
+            ],
+            steps: [
+                .init(
+                    name: "Test Step",
+                    script: .bash(.init(id: mainStepId, command: "echo \"main step\"")),
+                    lifecycle: [
+                        .init(
+                            script: .bash(.init(id: beforeStepId, command: "echo \"before step\"")),
+                            on: .beforeStep),
+                        .init(
+                            script: .bash(.init(id: afterStepId, command: "echo \"after step\"")),
+                            on: .afterStep),
+                    ]
+                )
+            ]
+        )
+
+        // Initialize engine and execute
+        let engine = Engine(repository: repository)
+        let executeStream = try await engine.execute()
+
+        // Get the final repository state
+        var finalRepository: Repository? = nil
+        for try await updatedRepository in executeStream {
+            finalRepository = updatedRepository
+        }
+
+        // Verify repository was emitted
+        XCTAssertNotNil(finalRepository, "No repository was emitted")
+        guard let finalRepo = finalRepository else { return }
+
+        // Check global lifecycle events received results
+        var allScriptIds = Set<String>()
+        if let lifecycle = finalRepo.lifecycle {
+            for event in lifecycle {
+                for result in event.results {
+                    switch result {
+                    case .bash(let bashResult):
+                        allScriptIds.insert(bashResult.scriptId)
+                    case .nextStep(let nextStep):
+                        allScriptIds.insert(nextStep.scriptId)
+                    }
+                }
+            }
+        }
+
+        // Check step scripts received results
+        if let steps = finalRepo.steps {
+            for step in steps {
+                for result in step.results {
+                    switch result {
+                    case .bash(let bashResult):
+                        allScriptIds.insert(bashResult.scriptId)
+                    case .nextStep(let nextStep):
+                        allScriptIds.insert(nextStep.scriptId)
+                    }
+                }
+
+                // Check step lifecycle events
+                if let lifecycle = step.lifecycle {
+                    for event in lifecycle {
+                        for result in event.results {
+                            switch result {
+                            case .bash(let bashResult):
+                                allScriptIds.insert(bashResult.scriptId)
+                            case .nextStep(let nextStep):
+                                allScriptIds.insert(nextStep.scriptId)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Verify all script IDs were found in results
+        XCTAssertTrue(allScriptIds.contains(globalSetupId), "Global setup script results missing")
+        XCTAssertTrue(
+            allScriptIds.contains(globalTeardownId), "Global teardown script results missing")
+        XCTAssertTrue(allScriptIds.contains(mainStepId), "Main step script results missing")
+        XCTAssertTrue(allScriptIds.contains(beforeStepId), "Before step script results missing")
+        XCTAssertTrue(allScriptIds.contains(afterStepId), "After step script results missing")
     }
 }
