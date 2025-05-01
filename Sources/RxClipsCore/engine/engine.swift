@@ -63,7 +63,10 @@ public actor Engine {
         }
     }
 
-    public func execute() throws -> AsyncThrowingStream<ExecuteResult, Error> {
+    /// Execute the scriptExecutionSteps in order
+    /// @return AsyncThrowingStream<ExecuteResult, Error>
+    /// @note This function is internal and is used to execute the scriptExecutionSteps in order
+    internal func executeSteps() throws -> AsyncThrowingStream<ExecuteResult, Error> {
         return AsyncThrowingStream { continuation in
             Task {
                 for script in self.scriptExecutionSteps {
@@ -76,4 +79,95 @@ public actor Engine {
             }
         }
     }
+
+    /// Execute the repository by running all the steps and lifecycle events
+    /// Returns a stream of Repository objects with updated execution results
+    public func execute() throws -> AsyncThrowingStream<Repository, Error> {
+        // Parse the repository to prepare execution steps
+        self.parseRepository()
+
+        return AsyncThrowingStream { continuation in
+            Task {
+                // Create a mutable copy of the repository to update with results
+                var updatedRepository = self.repository
+
+                do {
+                    // Execute all steps and collect results
+                    for try await result in try self.executeSteps() {
+                        // Find the corresponding step or lifecycle event and append the result
+                        switch result {
+                        case .bash(let bashResult):
+                            // Update steps with results
+                            if let steps = updatedRepository.steps {
+                                for i in 0..<steps.count {
+                                    if steps[i].script.id == bashResult.scriptId {
+                                        updatedRepository.steps?[i].results.append(result)
+                                    }
+
+                                    // Check step lifecycle events
+                                    if let lifecycle = steps[i].lifecycle {
+                                        for j in 0..<lifecycle.count {
+                                            if lifecycle[j].script.id == bashResult.scriptId {
+                                                updatedRepository.steps?[i].lifecycle?[j].results
+                                                    .append(result)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Update global lifecycle events with results
+                            if let lifecycle = updatedRepository.lifecycle {
+                                for i in 0..<lifecycle.count {
+                                    if lifecycle[i].script.id == bashResult.scriptId {
+                                        updatedRepository.lifecycle?[i].results.append(result)
+                                    }
+                                }
+                            }
+
+                        case .nextStep(let nextStepResult):
+                            // Add nextStep result to the corresponding script
+                            // Update steps with results
+                            if let steps = updatedRepository.steps {
+                                for i in 0..<steps.count {
+                                    if steps[i].script.id == nextStepResult.scriptId {
+                                        updatedRepository.steps?[i].results.append(result)
+                                    }
+
+                                    // Check step lifecycle events
+                                    if let lifecycle = steps[i].lifecycle {
+                                        for j in 0..<lifecycle.count {
+                                            if lifecycle[j].script.id == nextStepResult.scriptId {
+                                                updatedRepository.steps?[i].lifecycle?[j].results
+                                                    .append(result)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Update global lifecycle events with results
+                            if let lifecycle = updatedRepository.lifecycle {
+                                for i in 0..<lifecycle.count {
+                                    if lifecycle[i].script.id == nextStepResult.scriptId {
+                                        updatedRepository.lifecycle?[i].results.append(result)
+                                    }
+                                }
+                            }
+
+                            // Yield the current state
+                            continuation.yield(updatedRepository)
+                        }
+                    }
+
+                    // Yield final state
+                    continuation.yield(updatedRepository)
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
 }
