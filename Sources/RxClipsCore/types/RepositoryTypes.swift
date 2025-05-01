@@ -46,125 +46,218 @@ public enum Permission: String, Codable {
     case writeVariable
 }
 
-// MARK: - Lifecycle Event
-public enum LifecycleEvent: Codable {
-    public struct BashScript: Codable {
+public enum Script: Identifiable, Codable {
+    public var bashScript: BashScript? {
+        guard case .bash(let bashScript) = self else {
+            return nil
+        }
+        return bashScript
+    }
+
+    public var javascriptScript: JavaScriptScript? {
+        guard case .javascript(let javascriptScript) = self else {
+            return nil
+        }
+        return javascriptScript
+    }
+
+    public var templateScript: TemplateScript? {
+        guard case .template(let templateScript) = self else {
+            return nil
+        }
+        return templateScript
+    }
+
+    public var type: ScriptType {
+        switch self {
+        case .bash: return .bash
+        case .javascript: return .javascript
+        case .template: return .template
+        }
+    }
+
+    public struct BashScript: Identifiable, Codable {
+        public var id: String
         public var type: ScriptType = .bash
         public var command: String
-        public var on: LifecycleEventType
 
-        public init(command: String, on: LifecycleEventType) {
+        public init(id: String? = nil, command: String) {
+            self.id = id ?? UUID().uuidString
             self.command = command
-            self.on = on
         }
     }
 
-    public struct JavaScriptScript: Codable {
+    public struct JavaScriptScript: Identifiable, Codable {
+        public var id: String
         public var type: ScriptType = .javascript
         public var file: String
-        public var on: LifecycleEventType
 
-        public init(file: String, on: LifecycleEventType) {
+        public init(id: String? = nil, file: String) {
+            self.id = id ?? UUID().uuidString
             self.file = file
-            self.on = on
         }
     }
 
-    public struct TemplateScript: Codable {
+    public struct TemplateScript: Identifiable, Codable {
+        public var id: String
         public var type: ScriptType = .template
         public var file: String
-        public var on: LifecycleEventType
+        public var files: [TemplateFile]?
 
-        public init(file: String, on: LifecycleEventType) {
+        public init(id: String? = nil, file: String, files: [TemplateFile]? = nil) {
+            self.id = id ?? UUID().uuidString
             self.file = file
-            self.on = on
+            self.files = files
         }
     }
-
     case bash(BashScript)
     case javascript(JavaScriptScript)
     case template(TemplateScript)
+
+    public var id: String {
+        switch self {
+        case .bash(let bashScript): return bashScript.id
+        case .javascript(let javascriptScript): return javascriptScript.id
+        case .template(let templateScript): return templateScript.id
+        }
+    }
+}
+
+// MARK: - Lifecycle Event
+public struct LifecycleEvent: Identifiable, Codable, Comparable {
+    public var id: String
+    public var script: Script
+    public var on: LifecycleEventType
+    public var results: [ExecuteResult]
+
+    public init(id: String? = nil, script: Script, on: LifecycleEventType) {
+        self.id = id ?? UUID().uuidString
+        self.script = script
+        self.on = on
+        self.results = []
+    }
 
     enum CodingKeys: String, CodingKey {
         case type
         case command
         case file
+        case files
         case on
+        case id
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let type = try container.decode(ScriptType.self, forKey: .type)
+        self.on = try container.decode(LifecycleEventType.self, forKey: .on)
+        self.id = try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
+        self.results = []
 
         switch type {
         case .bash:
             let command = try container.decode(String.self, forKey: .command)
-            let on = try container.decode(LifecycleEventType.self, forKey: .on)
-            self = .bash(BashScript(command: command, on: on))
+            self.script = .bash(Script.BashScript(command: command))
         case .javascript:
             let file = try container.decode(String.self, forKey: .file)
-            let on = try container.decode(LifecycleEventType.self, forKey: .on)
-            self = .javascript(JavaScriptScript(file: file, on: on))
+            self.script = .javascript(Script.JavaScriptScript(file: file))
         case .template:
-            let file = try container.decode(String.self, forKey: .file)
-            let on = try container.decode(LifecycleEventType.self, forKey: .on)
-            self = .template(TemplateScript(file: file, on: on))
+            let files = try container.decodeIfPresent([TemplateFile].self, forKey: .files)
+            let file = try container.decodeIfPresent(String.self, forKey: .file)
+
+            if let file = file {
+                self.script = .template(Script.TemplateScript(file: file, files: files))
+            } else if let files = files, !files.isEmpty {
+                self.script = .template(Script.TemplateScript(file: "", files: files))
+            } else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .file,
+                    in: container,
+                    debugDescription: "Template script requires either 'file' or 'files'"
+                )
+            }
         }
     }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.on, forKey: .on)
 
-        switch self {
-        case .bash(let script):
-            try container.encode(script.type, forKey: .type)
-            try container.encode(script.command, forKey: .command)
-            try container.encode(script.on, forKey: .on)
-        case .javascript(let script):
-            try container.encode(script.type, forKey: .type)
-            try container.encode(script.file, forKey: .file)
-            try container.encode(script.on, forKey: .on)
-        case .template(let script):
-            try container.encode(script.type, forKey: .type)
-            try container.encode(script.file, forKey: .file)
-            try container.encode(script.on, forKey: .on)
+        switch script {
+        case .bash(let bashScript):
+            try container.encode(bashScript.command, forKey: .command)
+            try container.encode(bashScript.type, forKey: .type)
+        case .javascript(let jsScript):
+            try container.encode(jsScript.file, forKey: .file)
+            try container.encode(jsScript.type, forKey: .type)
+        case .template(let templateScript):
+            try container.encode(templateScript.file, forKey: .file)
+            try container.encodeIfPresent(templateScript.files, forKey: .files)
+            try container.encode(templateScript.type, forKey: .type)
         }
+    }
+
+    public static func < (lhs: LifecycleEvent, rhs: LifecycleEvent) -> Bool {
+        return lhs.on < rhs.on
+    }
+
+    public static func == (lhs: LifecycleEvent, rhs: LifecycleEvent) -> Bool {
+        return lhs.on == rhs.on
+    }
+
+    public static func != (lhs: LifecycleEvent, rhs: LifecycleEvent) -> Bool {
+        return lhs.on != rhs.on
+    }
+
+    public static func <= (lhs: LifecycleEvent, rhs: LifecycleEvent) -> Bool {
+        return lhs.on <= rhs.on
+    }
+
+    public static func >= (lhs: LifecycleEvent, rhs: LifecycleEvent) -> Bool {
+        return lhs.on >= rhs.on
     }
 }
 
-public enum LifecycleEventType: String, Codable {
+public enum LifecycleEventType: String, Codable, Comparable {
     case setup
-    case teardown
     case beforeStep
     case afterStep
+    case teardown
+
+    var value: Int {
+        switch self {
+        case .setup: return 0
+        case .beforeStep: return 1
+        case .afterStep: return 2
+        case .teardown: return 3
+        }
+    }
+
+    public static func < (lhs: LifecycleEventType, rhs: LifecycleEventType) -> Bool {
+        return lhs.value < rhs.value
+    }
 }
 
 // MARK: - Step
-public struct Step: Codable {
-    public var id: String?
+public struct Step: Identifiable, Codable {
+    public var id: String
     public var name: String?
     public var form: JSONSchema?
     public var ifCondition: String?
-    public var type: ScriptType
-    public var command: String?
-    public var file: String?
-    public var files: [TemplateFile]?
+    public var script: Script
     public var lifecycle: [LifecycleEvent]?
+    public var results: [ExecuteResult]
 
     public init(
         id: String? = nil, name: String? = nil, form: JSONSchema? = nil,
-        ifCondition: String? = nil, type: ScriptType, command: String? = nil, file: String? = nil,
-        files: [TemplateFile]? = nil, lifecycle: [LifecycleEvent]? = nil
+        ifCondition: String? = nil, script: Script, lifecycle: [LifecycleEvent]? = nil
     ) {
-        self.id = id
+        self.id = id ?? UUID().uuidString
         self.name = name
         self.form = form
         self.ifCondition = ifCondition
-        self.type = type
-        self.command = command
-        self.file = file
-        self.files = files
+        self.script = script
         self.lifecycle = lifecycle
+        self.results = []
     }
 
     enum CodingKeys: String, CodingKey {
@@ -177,6 +270,66 @@ public struct Step: Codable {
         case file
         case files
         case lifecycle
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        self.id = try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
+        self.name = try container.decodeIfPresent(String.self, forKey: .name)
+        self.form = try container.decodeIfPresent(JSONSchema.self, forKey: .form)
+        self.ifCondition = try container.decodeIfPresent(String.self, forKey: .ifCondition)
+        self.lifecycle = try container.decodeIfPresent([LifecycleEvent].self, forKey: .lifecycle)
+        self.results = []
+
+        let type = try container.decode(ScriptType.self, forKey: .type)
+
+        switch type {
+        case .bash:
+            let command = try container.decode(String.self, forKey: .command)
+            self.script = .bash(Script.BashScript(command: command))
+        case .javascript:
+            let file = try container.decode(String.self, forKey: .file)
+            self.script = .javascript(Script.JavaScriptScript(file: file))
+        case .template:
+            let files = try container.decodeIfPresent([TemplateFile].self, forKey: .files)
+            let file = try container.decodeIfPresent(String.self, forKey: .file)
+
+            if let file = file {
+                self.script = .template(Script.TemplateScript(file: file, files: files))
+            } else if let files = files, !files.isEmpty {
+                self.script = .template(Script.TemplateScript(file: "", files: files))
+            } else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .file,
+                    in: container,
+                    debugDescription: "Template script requires either 'file' or 'files'"
+                )
+            }
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+
+        try container.encodeIfPresent(id, forKey: .id)
+        try container.encodeIfPresent(name, forKey: .name)
+        try container.encodeIfPresent(form, forKey: .form)
+        try container.encodeIfPresent(ifCondition, forKey: .ifCondition)
+        try container.encodeIfPresent(lifecycle, forKey: .lifecycle)
+
+        switch script {
+        case .bash(let bashScript):
+            try container.encode(bashScript.type, forKey: .type)
+            try container.encode(bashScript.command, forKey: .command)
+        case .javascript(let jsScript):
+            try container.encode(jsScript.type, forKey: .type)
+            try container.encode(jsScript.file, forKey: .file)
+        case .template(let templateScript):
+            try container.encode(templateScript.type, forKey: .type)
+            try container.encode(templateScript.file, forKey: .file)
+            try container.encodeIfPresent(templateScript.files, forKey: .files)
+        }
     }
 }
 
