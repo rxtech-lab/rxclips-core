@@ -68,7 +68,8 @@ class BashEngineTests: XCTestCase {
         let bashScript = Script.BashScript(
             id: UUID().uuidString, command: "echo 'test bash engine'")
 
-        let outputSequence = try await bashEngine.run(command: bashScript)
+        let outputSequence = try await bashEngine.run(
+            script: bashScript, cwd: URL(fileURLWithPath: "/tmp"), formData: [:])
 
         var outputs: [ExecuteResult] = []
         for try await result in outputSequence {
@@ -96,7 +97,8 @@ class BashEngineTests: XCTestCase {
         let bashScript = Script.BashScript(id: UUID().uuidString, command: "nonexistentcommand")
 
         do {
-            let outputSequence = try await bashEngine.run(command: bashScript)
+            let outputSequence = try await bashEngine.run(
+                script: bashScript, cwd: URL(fileURLWithPath: "/tmp"), formData: [:])
             for try await _ in outputSequence {}
             XCTFail("Command should have failed but didn't")
         } catch {

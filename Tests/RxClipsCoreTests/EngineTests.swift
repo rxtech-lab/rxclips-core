@@ -210,6 +210,8 @@ class EngineExecuteTests: XCTestCase {
                     bashResult.output.trimmingCharacters(in: .whitespacesAndNewlines))
             case .nextStep:
                 nextStepCount += 1
+            default:
+                continue
             }
         }
 
@@ -285,6 +287,8 @@ class EngineExecuteTests: XCTestCase {
                         allScriptIds.insert(bashResult.scriptId)
                     case .nextStep(let nextStep):
                         allScriptIds.insert(nextStep.scriptId)
+                    default:
+                        continue
                     }
                 }
             }
@@ -299,6 +303,8 @@ class EngineExecuteTests: XCTestCase {
                         allScriptIds.insert(bashResult.scriptId)
                     case .nextStep(let nextStep):
                         allScriptIds.insert(nextStep.scriptId)
+                    default:
+                        continue
                     }
                 }
 
@@ -311,6 +317,8 @@ class EngineExecuteTests: XCTestCase {
                                 allScriptIds.insert(bashResult.scriptId)
                             case .nextStep(let nextStep):
                                 allScriptIds.insert(nextStep.scriptId)
+                            default:
+                                continue
                             }
                         }
                     }
