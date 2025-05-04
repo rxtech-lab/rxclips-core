@@ -23,16 +23,20 @@ public actor Engine {
     internal var scriptExecutionSteps: [Script] = []
     private let repository: Repository
     private let cwd: URL
+    private let baseURL: URL
 
     /// Initialize the engine with a repository
     /// @param repository The repository to execute
     /// @param cwd The current working directory
+    /// @param engines List of script engines to use for execution
     public init(
         repository: Repository,
-        cwd: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        cwd: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+        baseURL: URL
     ) {
         self.repository = repository
         self.cwd = cwd
+        self.baseURL = baseURL
     }
 
     /// Parse the repository spec into a list of executable steps
@@ -58,13 +62,19 @@ public actor Engine {
         }
     }
 
-    internal func executeScript(script: Script) async throws -> any AsyncSequence<
-        ExecuteResult, Error
-    > {
+    internal func executeScript(script: Script, formData: [String: Any]) async throws
+        -> any AsyncSequence<
+            ExecuteResult, Error
+        >
+    {
         switch script {
         case .bash(let bashScript):
-            let engine = BashEngine(commandExecutor: .init())
-            return try await engine.run(command: bashScript, cwd: self.cwd)
+            return try await BashEngine(commandExecutor: BashCommandExecutor()).run(
+                script: bashScript, cwd: self.cwd, baseURL: self.baseURL, formData: formData)
+
+        case .template(let templateScript):
+            return try await TemplateEngine().run(
+                script: templateScript, cwd: self.cwd, baseURL: self.baseURL, formData: formData)
 
         default:
             throw ExecuteError.unsupportedScriptType(script.type)
@@ -79,7 +89,9 @@ public actor Engine {
             Task {
                 do {
                     for script in self.scriptExecutionSteps {
-                        for try await result in try await self.executeScript(script: script) {
+                        for try await result in try await self.executeScript(
+                            script: script, formData: [:])
+                        {
                             continuation.yield(result)
                         }
                         continuation.yield(.nextStep(.init(scriptId: script.id)))
@@ -132,6 +144,48 @@ public actor Engine {
                             if let lifecycle = updatedRepository.lifecycle {
                                 for i in 0..<lifecycle.count {
                                     if lifecycle[i].script.id == bashResult.scriptId {
+                                        updatedRepository.lifecycle?[i].results.append(result)
+                                    }
+                                }
+                            }
+
+                        case .template(let templateResult):
+                            // Update steps with results
+                            if let steps = updatedRepository.steps {
+                                for i in 0..<steps.count {
+                                    if let templateScript = steps[i].script.templateScript,
+                                        templateScript.files?.contains(where: {
+                                            $0.output == templateResult.filePath
+                                        }) ?? false
+                                    {
+                                        updatedRepository.steps?[i].results.append(result)
+                                    }
+
+                                    // Check step lifecycle events
+                                    if let lifecycle = steps[i].lifecycle {
+                                        for j in 0..<lifecycle.count {
+                                            if let templateScript = lifecycle[j].script
+                                                .templateScript,
+                                                templateScript.files?.contains(where: {
+                                                    $0.output == templateResult.filePath
+                                                }) ?? false
+                                            {
+                                                updatedRepository.steps?[i].lifecycle?[j].results
+                                                    .append(result)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Update global lifecycle events with results
+                            if let lifecycle = updatedRepository.lifecycle {
+                                for i in 0..<lifecycle.count {
+                                    if let templateScript = lifecycle[i].script.templateScript,
+                                        templateScript.files?.contains(where: {
+                                            $0.output == templateResult.filePath
+                                        }) ?? false
+                                    {
                                         updatedRepository.lifecycle?[i].results.append(result)
                                     }
                                 }

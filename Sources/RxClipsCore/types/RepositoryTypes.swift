@@ -76,7 +76,7 @@ public enum Script: Identifiable, Codable {
         }
     }
 
-    public struct BashScript: Identifiable, Codable {
+    public struct BashScript: ScriptProtocol {
         public var id: String
         public var type: ScriptType = .bash
         public var command: String
@@ -87,7 +87,7 @@ public enum Script: Identifiable, Codable {
         }
     }
 
-    public struct JavaScriptScript: Identifiable, Codable {
+    public struct JavaScriptScript: ScriptProtocol {
         public var id: String
         public var type: ScriptType = .javascript
         public var file: String
@@ -98,15 +98,13 @@ public enum Script: Identifiable, Codable {
         }
     }
 
-    public struct TemplateScript: Identifiable, Codable {
+    public struct TemplateScript: ScriptProtocol {
         public var id: String
         public var type: ScriptType = .template
-        public var file: String
         public var files: [TemplateFile]?
 
-        public init(id: String? = nil, file: String, files: [TemplateFile]? = nil) {
+        public init(id: String? = nil, files: [TemplateFile]? = nil) {
             self.id = id ?? UUID().uuidString
-            self.file = file
             self.files = files
         }
     }
@@ -162,12 +160,9 @@ public struct LifecycleEvent: Identifiable, Codable, Comparable {
             self.script = .javascript(Script.JavaScriptScript(file: file))
         case .template:
             let files = try container.decodeIfPresent([TemplateFile].self, forKey: .files)
-            let file = try container.decodeIfPresent(String.self, forKey: .file)
 
-            if let file = file {
-                self.script = .template(Script.TemplateScript(file: file, files: files))
-            } else if let files = files, !files.isEmpty {
-                self.script = .template(Script.TemplateScript(file: "", files: files))
+            if let files = files, !files.isEmpty {
+                self.script = .template(Script.TemplateScript(files: files))
             } else {
                 throw DecodingError.dataCorruptedError(
                     forKey: .file,
@@ -190,7 +185,6 @@ public struct LifecycleEvent: Identifiable, Codable, Comparable {
             try container.encode(jsScript.file, forKey: .file)
             try container.encode(jsScript.type, forKey: .type)
         case .template(let templateScript):
-            try container.encode(templateScript.file, forKey: .file)
             try container.encodeIfPresent(templateScript.files, forKey: .files)
             try container.encode(templateScript.type, forKey: .type)
         }
@@ -293,12 +287,9 @@ public struct Step: Identifiable, Codable {
             self.script = .javascript(Script.JavaScriptScript(file: file))
         case .template:
             let files = try container.decodeIfPresent([TemplateFile].self, forKey: .files)
-            let file = try container.decodeIfPresent(String.self, forKey: .file)
 
-            if let file = file {
-                self.script = .template(Script.TemplateScript(file: file, files: files))
-            } else if let files = files, !files.isEmpty {
-                self.script = .template(Script.TemplateScript(file: "", files: files))
+            if let files = files, !files.isEmpty {
+                self.script = .template(Script.TemplateScript(files: files))
             } else {
                 throw DecodingError.dataCorruptedError(
                     forKey: .file,
@@ -327,7 +318,6 @@ public struct Step: Identifiable, Codable {
             try container.encode(jsScript.file, forKey: .file)
         case .template(let templateScript):
             try container.encode(templateScript.type, forKey: .type)
-            try container.encode(templateScript.file, forKey: .file)
             try container.encodeIfPresent(templateScript.files, forKey: .files)
         }
     }
@@ -342,12 +332,10 @@ public enum ScriptType: String, Codable {
 
 // MARK: - Template File
 public struct TemplateFile: Codable {
-    public var templateFolder: String?
     public var file: String
     public var output: String
 
-    public init(templateFolder: String? = nil, file: String, output: String) {
-        self.templateFolder = templateFolder
+    public init(file: String, output: String) {
         self.file = file
         self.output = output
     }
