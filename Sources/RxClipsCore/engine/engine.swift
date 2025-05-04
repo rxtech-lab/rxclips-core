@@ -23,6 +23,7 @@ public actor Engine {
     internal var scriptExecutionSteps: [Script] = []
     private let repository: Repository
     private let cwd: URL
+    private let baseURL: URL
 
     /// Initialize the engine with a repository
     /// @param repository The repository to execute
@@ -30,10 +31,12 @@ public actor Engine {
     /// @param engines List of script engines to use for execution
     public init(
         repository: Repository,
-        cwd: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        cwd: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+        baseURL: URL
     ) {
         self.repository = repository
         self.cwd = cwd
+        self.baseURL = baseURL
     }
 
     /// Parse the repository spec into a list of executable steps
@@ -67,11 +70,11 @@ public actor Engine {
         switch script {
         case .bash(let bashScript):
             return try await BashEngine(commandExecutor: BashCommandExecutor()).run(
-                script: bashScript, cwd: self.cwd, formData: formData)
+                script: bashScript, cwd: self.cwd, baseURL: self.baseURL, formData: formData)
 
         case .template(let templateScript):
             return try await TemplateEngine().run(
-                script: templateScript, cwd: self.cwd, formData: formData)
+                script: templateScript, cwd: self.cwd, baseURL: self.baseURL, formData: formData)
 
         default:
             throw ExecuteError.unsupportedScriptType(script.type)

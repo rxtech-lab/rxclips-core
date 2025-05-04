@@ -21,7 +21,7 @@ class EngineParseRepositoryTests: XCTestCase {
                     ]
                 )
             ])
-        let engine = Engine(repository: repository)
+        let engine = Engine(repository: repository, baseURL: URL(string: "https://example.com")!)
         await engine.parseRepository()
         let scriptExecutionSteps = await engine.scriptExecutionSteps
         XCTAssertEqual(scriptExecutionSteps.count, 5)
@@ -44,7 +44,7 @@ class EngineParseRepositoryTests: XCTestCase {
             steps: []
         )
 
-        let engine = Engine(repository: repository)
+        let engine = Engine(repository: repository, baseURL: URL(string: "https://example.com")!)
         await engine.parseRepository()
         let scriptExecutionSteps = await engine.scriptExecutionSteps
 
@@ -71,7 +71,7 @@ class EngineParseRepositoryTests: XCTestCase {
             ]
         )
 
-        let engine = Engine(repository: repository)
+        let engine = Engine(repository: repository, baseURL: URL(string: "https://example.com")!)
         await engine.parseRepository()
         let scriptExecutionSteps = await engine.scriptExecutionSteps
 
@@ -98,7 +98,7 @@ class EngineParseRepositoryTests: XCTestCase {
             ]
         )
 
-        let engine = Engine(repository: repository)
+        let engine = Engine(repository: repository, baseURL: URL(string: "https://example.com")!)
         await engine.parseRepository()
         let scriptExecutionSteps = await engine.scriptExecutionSteps
 
@@ -117,7 +117,7 @@ class EngineParseRepositoryTests: XCTestCase {
             steps: nil
         )
 
-        let engine = Engine(repository: repository)
+        let engine = Engine(repository: repository, baseURL: URL(string: "https://example.com")!)
         await engine.parseRepository()
         let scriptExecutionSteps = await engine.scriptExecutionSteps
 
@@ -156,7 +156,7 @@ class EngineParseRepositoryTests: XCTestCase {
             ]
         )
 
-        let engine = Engine(repository: repository)
+        let engine = Engine(repository: repository, baseURL: URL(string: "https://example.com")!)
         await engine.parseRepository()
         let scriptExecutionSteps = await engine.scriptExecutionSteps
 
@@ -194,7 +194,7 @@ class EngineExecuteTests: XCTestCase {
         )
 
         // Initialize and parse repository
-        let engine = Engine(repository: repository)
+        let engine = Engine(repository: repository, baseURL: URL(string: "https://example.com")!)
         await engine.parseRepository()
 
         // Execute and collect results
@@ -264,7 +264,7 @@ class EngineExecuteTests: XCTestCase {
         )
 
         // Initialize engine and execute
-        let engine = Engine(repository: repository)
+        let engine = Engine(repository: repository, baseURL: URL(string: "https://example.com")!)
         let executeStream = try await engine.execute()
 
         // Get the final repository state
@@ -358,7 +358,8 @@ class EngineCwdTests: XCTestCase {
         )
 
         // Initialize engine with the system directory
-        let engine = Engine(repository: repository, cwd: systemDir)
+        let engine = Engine(
+            repository: repository, cwd: systemDir, baseURL: URL(string: "https://example.com")!)
         await engine.parseRepository()
 
         // Execute and collect results

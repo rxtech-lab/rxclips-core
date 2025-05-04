@@ -30,7 +30,7 @@ final class TemplateEngineTests: XCTestCase {
         }
         try await app?.startup()
 
-        return "http://localhost:8080/template/\(routeId)"
+        return "template/\(routeId)"
     }
 
     func testTemplateEngine() async throws {
@@ -131,6 +131,7 @@ final class TemplateEngineTests: XCTestCase {
         let resultSequence = try await engine.run(
             script: templateScript,
             cwd: temporaryDirectory,
+            baseURL: URL(string: "http://localhost:8080")!,
             formData: formData
         )
 

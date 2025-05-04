@@ -8,7 +8,8 @@ enum TemplateError: Error {
 }
 
 actor TemplateEngine: EngineProtocol {
-    public func run(script: Script.TemplateScript, cwd: URL, formData: [String: Any]) async throws
+    public func run(script: Script.TemplateScript, cwd: URL, baseURL: URL, formData: [String: Any])
+        async throws
         -> any AsyncSequence<
             ExecuteResult, Error
         >
@@ -17,7 +18,7 @@ actor TemplateEngine: EngineProtocol {
             Task {
                 do {
                     for file in script.files ?? [] {
-                        let templateFile = try await loadTemplate(file: file.file)
+                        let templateFile = try await loadTemplate(baseURL: baseURL, file: file.file)
                         let template = Template(templateString: templateFile)
                         let rendered = try template.render(formData)
 
@@ -35,19 +36,13 @@ actor TemplateEngine: EngineProtocol {
     }
 
     /// Load a template from local path or remote url
-    internal func loadTemplate(file: String) async throws -> String {
-        if file.hasPrefix("http") {
-            guard let url = URL(string: file) else {
-                throw TemplateError.invalidUrl(file)
-            }
-            let (data, _) = try await URLSession.shared.data(from: url)
-            guard let string = String(data: data, encoding: .utf8) else {
-                throw TemplateError.invalidTemplate(file)
-            }
-            return string
-        } else {
-            return try String(contentsOf: URL(fileURLWithPath: file), encoding: .utf8)
+    internal func loadTemplate(baseURL: URL, file: String) async throws -> String {
+        let url = baseURL.appendingPathComponent(file)
+        let (data, _) = try await URLSession.shared.data(from: url)
+        guard let string = String(data: data, encoding: .utf8) else {
+            throw TemplateError.invalidTemplate(file)
         }
+        return string
     }
 
     /// join the cwd and file path

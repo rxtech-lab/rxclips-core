@@ -69,7 +69,8 @@ class BashEngineTests: XCTestCase {
             id: UUID().uuidString, command: "echo 'test bash engine'")
 
         let outputSequence = try await bashEngine.run(
-            script: bashScript, cwd: URL(fileURLWithPath: "/tmp"), formData: [:])
+            script: bashScript, cwd: URL(fileURLWithPath: "/tmp"),
+            baseURL: URL(string: "http://localhost:8080")!, formData: [:])
 
         var outputs: [ExecuteResult] = []
         for try await result in outputSequence {
@@ -98,7 +99,8 @@ class BashEngineTests: XCTestCase {
 
         do {
             let outputSequence = try await bashEngine.run(
-                script: bashScript, cwd: URL(fileURLWithPath: "/tmp"), formData: [:])
+                script: bashScript, cwd: URL(fileURLWithPath: "/tmp"),
+                baseURL: URL(string: "http://localhost:8080")!, formData: [:])
             for try await _ in outputSequence {}
             XCTFail("Command should have failed but didn't")
         } catch {
