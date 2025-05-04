@@ -19,8 +19,33 @@ extension Step {
     }
 }
 
+extension Job {
+    func toExecutionStep() -> [Script] {
+        var steps: [Script] = []
+        let scriptSteps = self.steps.flatMap { $0.toExecutionStep() }
+        if let setup = self.lifecycle.first(where: { $0.on == .beforeJob }) {
+            steps.append(setup.script)
+        }
+        steps.append(contentsOf: scriptSteps)
+        if let teardown = self.lifecycle.first(where: { $0.on == .afterJob }) {
+            steps.append(teardown.script)
+        }
+        return steps
+    }
+}
+
+/// Engine is responsible for executing a repository workflow.
+///
+/// The engine operates on a directed acyclic graph (DAG) of jobs, where:
+/// - The `root` and `tail` nodes handle global setup and teardown scripts respectively
+/// - Regular nodes execute their job definitions based on dependency order
+/// - Nodes without dependencies run in parallel for maximum efficiency
+/// - Nodes with dependencies wait for their upstream dependencies to complete before execution
+///
+/// This execution model ensures proper workflow orchestration while maximizing parallelism.
 public actor Engine {
-    internal var scriptExecutionSteps: [Script] = []
+    internal var rootNode: GraphNode?
+    internal var tailNode: GraphNode?
     private let repository: Repository
     private let cwd: URL
     private let baseURL: URL
@@ -42,28 +67,32 @@ public actor Engine {
     }
 
     /// Parse the repository spec into a list of executable steps
-    internal func parseRepository() {
-        self.scriptExecutionSteps = []
-        // sort global setup lifecycle events
-        if let lifeCycles = repository.lifecycle {
-            let sortedSteps = lifeCycles.filter { $0.on == .setup }.sorted()
-            self.scriptExecutionSteps.append(contentsOf: sortedSteps.map { $0.script })
+    internal func parseRepository() throws {
+        let (rootNode, tailNode) = try GraphNode.buildGraph(jobs: repository.jobs)
+        if let globalSetup = repository.lifecycle?.first(where: { $0.on == .setup }) {
+            rootNode.job.steps.append(
+                .init(
+                    id: "setup", name: "Setup", form: nil, ifCondition: nil,
+                    script: globalSetup.script, lifecycle: nil)
+            )
         }
 
-        // sort step setUpStep
-        if let steps = repository.steps {
-            for step in steps {
-                self.scriptExecutionSteps.append(contentsOf: step.toExecutionStep())
-            }
+        if let globalTeardown = repository.lifecycle?.first(where: { $0.on == .teardown }) {
+            tailNode.job.steps.append(
+                .init(
+                    id: "teardown", name: "Teardown", form: nil, ifCondition: nil,
+                    script: globalTeardown.script, lifecycle: nil)
+            )
         }
 
-        // sort global teardown lifecycle events
-        if let lifeCycles = repository.lifecycle {
-            let sortedSteps = lifeCycles.filter { $0.on == .teardown }.sorted()
-            self.scriptExecutionSteps.append(contentsOf: sortedSteps.map { $0.script })
-        }
+        self.rootNode = rootNode
+        self.tailNode = tailNode
     }
 
+    /// Execute a script
+    /// @param script The script to execute
+    /// @param formData The form data to pass to the script
+    /// @return AsyncThrowingStream<ExecuteResult, Error>
     internal func executeScript(script: Script, formData: [String: Any]) async throws
         -> any AsyncSequence<
             ExecuteResult, Error
@@ -85,23 +114,92 @@ public actor Engine {
 
     /// Execute the scriptExecutionSteps in order
     /// @return AsyncThrowingStream<ExecuteResult, Error>
-    /// @note This function is internal and is used to execute the scriptExecutionSteps in order
-    internal func executeSteps() throws -> AsyncThrowingStream<ExecuteResult, Error> {
+    internal func executeGraph(node: GraphNode) throws -> AsyncThrowingStream<ExecuteResult, Error>
+    {
         return AsyncThrowingStream { continuation in
             Task {
-                do {
-                    for script in self.scriptExecutionSteps {
-                        for try await result in try await self.executeScript(
-                            script: script, formData: [:])
-                        {
-                            continuation.yield(result)
+                var completedNodes = Set<GraphNode>()
+                var readyNodes = [GraphNode]()
+                var inProgressNodes = Set<GraphNode>()
+                var nodeTasks = [GraphNode: Task<Void, Never>]()
+
+                // Helper function to add nodes that are ready to execute
+                func addReadyNodes(from node: GraphNode) {
+                    if !completedNodes.contains(node) && !readyNodes.contains(node)
+                        && !inProgressNodes.contains(node)
+                    {
+                        let allDependenciesMet = node.parents.allSatisfy {
+                            completedNodes.contains($0)
                         }
-                        continuation.yield(.nextStep(.init(scriptId: script.id)))
+                        if allDependenciesMet {
+                            readyNodes.append(node)
+                        }
                     }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
+
+                    // Recursively check all descendants
+                    for child in node.children {
+                        addReadyNodes(from: child)
+                    }
                 }
+
+                // Start with root node and its descendants
+                addReadyNodes(from: node)
+
+                // Process until all nodes are completed
+                while !readyNodes.isEmpty || !inProgressNodes.isEmpty {
+                    // Launch tasks for all ready nodes
+                    while !readyNodes.isEmpty {
+                        let nodeToExecute = readyNodes.removeFirst()
+                        inProgressNodes.insert(nodeToExecute)
+
+                        // Create a task to execute this node
+                        let task = Task {
+                            do {
+                                // Execute each step in the job
+                                let steps = nodeToExecute.job.toExecutionStep()
+                                var formData: [String: Any] = [:]
+
+                                for step in steps {
+                                    let stream = try await self.executeScript(
+                                        script: step, formData: formData)
+
+                                    for try await result in stream {
+                                        continuation.yield(result)
+                                    }
+                                    continuation.yield(.nextStep(.init(scriptId: step.id)))
+                                }
+
+                                // Mark this node as completed
+                                completedNodes.insert(nodeToExecute)
+                                inProgressNodes.remove(nodeToExecute)
+
+                                // Check if any children are now ready to execute
+                                for child in nodeToExecute.children {
+                                    let dependenciesMet = child.parents.allSatisfy {
+                                        completedNodes.contains($0)
+                                    }
+                                    if dependenciesMet && !completedNodes.contains(child)
+                                        && !inProgressNodes.contains(child)
+                                        && !readyNodes.contains(child)
+                                    {
+                                        readyNodes.append(child)
+                                    }
+                                }
+                            } catch {
+                                continuation.finish(throwing: error)
+                            }
+                        }
+
+                        nodeTasks[nodeToExecute] = task
+                    }
+
+                    // If no nodes are ready but some are still in progress, wait a bit
+                    if readyNodes.isEmpty && !inProgressNodes.isEmpty {
+                        try? await Task.sleep(nanoseconds: 10_000_000)  // Wait 10ms
+                    }
+                }
+
+                continuation.finish()
             }
         }
     }
@@ -110,134 +208,12 @@ public actor Engine {
     /// Returns a stream of Repository objects with updated execution results
     public func execute() throws -> AsyncThrowingStream<Repository, Error> {
         // Parse the repository to prepare execution steps
-        self.parseRepository()
+        try self.parseRepository()
 
         return AsyncThrowingStream { continuation in
-            Task {
-                // Create a mutable copy of the repository to update with results
-                var updatedRepository = self.repository
 
-                do {
-                    // Execute all steps and collect results
-                    for try await result in try self.executeSteps() {
-                        // Find the corresponding step or lifecycle event and append the result
-                        switch result {
-                        case .bash(let bashResult):
-                            // Update steps with results
-                            if let steps = updatedRepository.steps {
-                                for i in 0..<steps.count {
-                                    if steps[i].script.id == bashResult.scriptId {
-                                        updatedRepository.steps?[i].results.append(result)
-                                    }
-
-                                    // Check step lifecycle events
-                                    if let lifecycle = steps[i].lifecycle {
-                                        for j in 0..<lifecycle.count {
-                                            if lifecycle[j].script.id == bashResult.scriptId {
-                                                updatedRepository.steps?[i].lifecycle?[j].results
-                                                    .append(result)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Update global lifecycle events with results
-                            if let lifecycle = updatedRepository.lifecycle {
-                                for i in 0..<lifecycle.count {
-                                    if lifecycle[i].script.id == bashResult.scriptId {
-                                        updatedRepository.lifecycle?[i].results.append(result)
-                                    }
-                                }
-                            }
-
-                        case .template(let templateResult):
-                            // Update steps with results
-                            if let steps = updatedRepository.steps {
-                                for i in 0..<steps.count {
-                                    if let templateScript = steps[i].script.templateScript,
-                                        templateScript.files?.contains(where: {
-                                            $0.output == templateResult.filePath
-                                        }) ?? false
-                                    {
-                                        updatedRepository.steps?[i].results.append(result)
-                                    }
-
-                                    // Check step lifecycle events
-                                    if let lifecycle = steps[i].lifecycle {
-                                        for j in 0..<lifecycle.count {
-                                            if let templateScript = lifecycle[j].script
-                                                .templateScript,
-                                                templateScript.files?.contains(where: {
-                                                    $0.output == templateResult.filePath
-                                                }) ?? false
-                                            {
-                                                updatedRepository.steps?[i].lifecycle?[j].results
-                                                    .append(result)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Update global lifecycle events with results
-                            if let lifecycle = updatedRepository.lifecycle {
-                                for i in 0..<lifecycle.count {
-                                    if let templateScript = lifecycle[i].script.templateScript,
-                                        templateScript.files?.contains(where: {
-                                            $0.output == templateResult.filePath
-                                        }) ?? false
-                                    {
-                                        updatedRepository.lifecycle?[i].results.append(result)
-                                    }
-                                }
-                            }
-
-                        case .nextStep(let nextStepResult):
-                            // Add nextStep result to the corresponding script
-                            // Update steps with results
-                            if let steps = updatedRepository.steps {
-                                for i in 0..<steps.count {
-                                    if steps[i].script.id == nextStepResult.scriptId {
-                                        updatedRepository.steps?[i].results.append(result)
-                                    }
-
-                                    // Check step lifecycle events
-                                    if let lifecycle = steps[i].lifecycle {
-                                        for j in 0..<lifecycle.count {
-                                            if lifecycle[j].script.id == nextStepResult.scriptId {
-                                                updatedRepository.steps?[i].lifecycle?[j].results
-                                                    .append(result)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Update global lifecycle events with results
-                            if let lifecycle = updatedRepository.lifecycle {
-                                for i in 0..<lifecycle.count {
-                                    if lifecycle[i].script.id == nextStepResult.scriptId {
-                                        updatedRepository.lifecycle?[i].results.append(result)
-                                    }
-                                }
-                            }
-
-                            // Yield the current state
-                            continuation.yield(updatedRepository)
-                        }
-                    }
-
-                    // Yield final state
-                    continuation.yield(updatedRepository)
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
         }
     }
-
 }
 
 // MARK: - Signal
@@ -277,5 +253,4 @@ extension Engine {
             eventListeners[eventName]?.append((id: listenerId, continuation: continuation))
         }
     }
-
 }

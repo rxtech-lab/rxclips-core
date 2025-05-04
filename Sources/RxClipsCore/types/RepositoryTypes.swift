@@ -6,16 +6,60 @@ public struct Repository: Codable {
     public var globalConfig: Configuration?
     public var permissions: [Permission]?
     public var lifecycle: [LifecycleEvent]?
-    public var steps: [Step]?
+    public var jobs: [Job]
+    public var environment: [String: String]?
 
     public init(
         globalConfig: Configuration? = nil, permissions: [Permission]? = nil,
-        lifecycle: [LifecycleEvent]? = nil, steps: [Step]? = nil
+        lifecycle: [LifecycleEvent]? = [], jobs: [Job] = [], environment: [String: String]? = nil
     ) {
         self.globalConfig = globalConfig
         self.permissions = permissions
         self.lifecycle = lifecycle
+        self.jobs = jobs
+        self.environment = environment
+    }
+}
+
+public struct Job: Codable, Identifiable {
+    public var id: String
+    public var name: String?
+    public var steps: [Step]
+    public var needs: [String]
+    public var environment: [String: String]
+    public var lifecycle: [LifecycleEvent]
+    public var form: JSONSchema?
+
+    public init(
+        id: String? = nil, name: String? = nil, steps: [Step] = [], needs: [String] = [],
+        environment: [String: String] = [:],
+        lifecycle: [LifecycleEvent] = [], form: JSONSchema? = nil
+    ) {
+        self.id = id ?? UUID().uuidString
+        self.name = name
         self.steps = steps
+        self.needs = needs
+        self.environment = environment
+        self.lifecycle = lifecycle
+        self.form = form
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, steps, needs, environment, lifecycle, form
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        self.id = try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
+        self.name = try container.decodeIfPresent(String.self, forKey: .name)
+        self.steps = try container.decodeIfPresent([Step].self, forKey: .steps) ?? []
+        self.needs = try container.decodeIfPresent([String].self, forKey: .needs) ?? []
+        self.environment =
+            try container.decodeIfPresent([String: String].self, forKey: .environment) ?? [:]
+        self.lifecycle =
+            try container.decodeIfPresent([LifecycleEvent].self, forKey: .lifecycle) ?? []
+        self.form = try container.decodeIfPresent(JSONSchema.self, forKey: .form)
     }
 }
 
@@ -216,13 +260,17 @@ public enum LifecycleEventType: String, Codable, Comparable {
     case beforeStep
     case afterStep
     case teardown
+    case beforeJob
+    case afterJob
 
     var value: Int {
         switch self {
         case .setup: return 0
-        case .beforeStep: return 1
-        case .afterStep: return 2
-        case .teardown: return 3
+        case .beforeJob: return 1
+        case .beforeStep: return 2
+        case .afterStep: return 3
+        case .afterJob: return 4
+        case .teardown: return 5
         }
     }
 
