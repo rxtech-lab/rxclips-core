@@ -6,14 +6,16 @@ extension Step {
         // find the lifecycle event for the step
         if let lifecycleEvent = self.lifecycle {
             let sortedLifecycleEvents = lifecycleEvent.filter { $0.on == .beforeStep }.sorted()
-            executionSteps.append(contentsOf: sortedLifecycleEvents.map { $0.script })
+            executionSteps.append(
+                contentsOf: sortedLifecycleEvents.map { $0.script.updateId(id: $0.id) })
         }
 
         executionSteps.append(self.script)
 
         if let lifecycleEvent = self.lifecycle {
             let sortedLifecycleEvents = lifecycleEvent.filter { $0.on == .afterStep }.sorted()
-            executionSteps.append(contentsOf: sortedLifecycleEvents.map { $0.script })
+            executionSteps.append(
+                contentsOf: sortedLifecycleEvents.map { $0.script.updateId(id: $0.id) })
         }
         return executionSteps
     }
@@ -24,13 +26,69 @@ extension Job {
         var steps: [Script] = []
         let scriptSteps = self.steps.flatMap { $0.toExecutionStep() }
         if let setup = self.lifecycle.first(where: { $0.on == .beforeJob }) {
-            steps.append(setup.script)
+            // set script id to the lifecycle id
+            steps.append(setup.script.updateId(id: setup.id))
         }
         steps.append(contentsOf: scriptSteps)
         if let teardown = self.lifecycle.first(where: { $0.on == .afterJob }) {
-            steps.append(teardown.script)
+            steps.append(teardown.script.updateId(id: teardown.id))
         }
         return steps
+    }
+}
+
+extension GraphNode {
+
+    // Convert a graph into the repository object
+    // Root node and tail node's job will be converted to the global lifecycle method inside the repository object.
+    // Root node's children will be converted to the jobs inside the repository object.
+    func toRepository(oldRepository: Repository) throws(ExecuteError) -> Repository {
+        // check if the node is root
+        guard self.isRoot else {
+            throw ExecuteError.notRootNode
+        }
+
+        // Create a new repository using the old one as a template
+        var repository = oldRepository
+
+        // Extract all nodes except root and tail
+        var jobNodes: [GraphNode] = []
+        var lifecycleEvents: [LifecycleEvent] = []
+
+        // Traverse the graph to collect all nodes
+        _ = self.traverse { node in
+            if !node.isRoot && !node.isTail {
+                jobNodes.append(node)
+            } else {
+                // Extract lifecycle events from root and tail nodes
+                if node.isRoot {
+                    for step in node.job.steps {
+                        let lifecycleEvent = LifecycleEvent(
+                            script: step.script,
+                            on: .setup,
+                            results: step.results
+                        )
+                        lifecycleEvents.append(lifecycleEvent)
+                    }
+
+                } else if node.isTail {
+                    for step in node.job.steps {
+                        let lifecycleEvent = LifecycleEvent(
+                            script: step.script,
+                            on: .teardown,
+                            results: step.results
+                        )
+                        lifecycleEvents.append(lifecycleEvent)
+                    }
+                }
+            }
+        }
+
+        // Update repository with new jobs and lifecycle events
+        repository.jobs = jobNodes.map { $0.job }
+        repository.lifecycle = lifecycleEvents
+
+        return repository
     }
 }
 
@@ -46,10 +104,10 @@ extension Job {
 public actor Engine {
     internal var rootNode: GraphNode?
     internal var tailNode: GraphNode?
-    private let repository: Repository
-    private let cwd: URL
-    private let baseURL: URL
-    private var eventListeners:
+    internal let repository: Repository
+    internal let cwd: URL
+    internal let baseURL: URL
+    internal var eventListeners:
         [String: [(id: UUID, continuation: CheckedContinuation<[String: Any], Never>)]] = [:]
 
     /// Initialize the engine with a repository
@@ -157,6 +215,7 @@ public actor Engine {
                             do {
                                 // Execute each step in the job
                                 let steps = nodeToExecute.job.toExecutionStep()
+                                //TODO: Emit ask for form data event and wait for response
                                 var formData: [String: Any] = [:]
 
                                 for step in steps {
@@ -206,51 +265,30 @@ public actor Engine {
 
     /// Execute the repository by running all the steps and lifecycle events
     /// Returns a stream of Repository objects with updated execution results
-    public func execute() throws -> AsyncThrowingStream<Repository, Error> {
+    public func execute() throws -> AsyncThrowingStream<(Repository, ExecuteResult), Error> {
         // Parse the repository to prepare execution steps
         try self.parseRepository()
+        guard var rootNode = self.rootNode else {
+            throw ExecuteError.parsingFailed
+        }
 
         return AsyncThrowingStream { continuation in
-
-        }
-    }
-}
-
-// MARK: - Signal
-extension Engine {
-    /// Emits an event to all registered listeners for the specified event name
-    /// - Parameters:
-    ///   - eventName: The name of the event to emit
-    ///   - data: Optional dictionary of data to pass to the listeners
-    /// - Note: If there are listeners registered for this event, the first listener will be triggered and then removed
-    func emit(_ eventName: String, data: [String: Any] = [:]) {
-        guard let listeners = eventListeners[eventName], !listeners.isEmpty else {
-            return
-        }
-
-        // Get the first listener for 'once' behavior
-        let listener = listeners[0]
-
-        // Remove this listener since 'once' only triggers once
-        eventListeners[eventName]?.removeAll { $0.id == listener.id }
-
-        // Resume the continuation with the data
-        listener.continuation.resume(returning: data)
-    }
-
-    /// Waits for an event to occur once and returns the associated data
-    /// - Parameter eventName: The name of the event to listen for
-    /// - Returns: Dictionary containing data passed when the event is emitted
-    /// - Note: This function registers a one-time listener that will be automatically removed after the event occurs
-    func once(_ eventName: String) async -> [String: Any] {
-        return await withCheckedContinuation { continuation in
-            let listenerId = UUID()
-
-            if eventListeners[eventName] == nil {
-                eventListeners[eventName] = []
+            Task {
+                do {
+                    for try await result in try self.executeGraph(node: rootNode) {
+                        rootNode = rootNode.traverse { GraphNode in
+                            addExecutionResult(
+                                id: result.scriptId, for: &GraphNode, with: result)
+                        }
+                        let newRepository = try rootNode.toRepository(
+                            oldRepository: self.repository)
+                        continuation.yield((newRepository, result))
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
             }
-
-            eventListeners[eventName]?.append((id: listenerId, continuation: continuation))
         }
     }
 }

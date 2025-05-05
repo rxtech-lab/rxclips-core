@@ -129,6 +129,10 @@ public enum Script: Identifiable, Codable {
             self.id = id ?? UUID().uuidString
             self.command = command
         }
+
+        public func updateId(id: String) -> BashScript {
+            return BashScript(id: id, command: self.command)
+        }
     }
 
     public struct JavaScriptScript: ScriptProtocol {
@@ -140,6 +144,10 @@ public enum Script: Identifiable, Codable {
             self.id = id ?? UUID().uuidString
             self.file = file
         }
+
+        public func updateId(id: String) -> JavaScriptScript {
+            return JavaScriptScript(id: id, file: self.file)
+        }
     }
 
     public struct TemplateScript: ScriptProtocol {
@@ -150,6 +158,10 @@ public enum Script: Identifiable, Codable {
         public init(id: String? = nil, files: [TemplateFile]? = nil) {
             self.id = id ?? UUID().uuidString
             self.files = files
+        }
+
+        public func updateId(id: String) -> TemplateScript {
+            return TemplateScript(id: id, files: self.files)
         }
     }
     case bash(BashScript)
@@ -163,6 +175,15 @@ public enum Script: Identifiable, Codable {
         case .template(let templateScript): return templateScript.id
         }
     }
+
+    public func updateId(id: String) -> Script {
+        switch self {
+        case .bash(let bashScript): return .bash(bashScript.updateId(id: id))
+        case .javascript(let javascriptScript):
+            return .javascript(javascriptScript.updateId(id: id))
+        case .template(let templateScript): return .template(templateScript.updateId(id: id))
+        }
+    }
 }
 
 // MARK: - Lifecycle Event
@@ -172,11 +193,13 @@ public struct LifecycleEvent: Identifiable, Codable, Comparable {
     public var on: LifecycleEventType
     public var results: [ExecuteResult]
 
-    public init(id: String? = nil, script: Script, on: LifecycleEventType) {
+    public init(
+        id: String? = nil, script: Script, on: LifecycleEventType, results: [ExecuteResult] = []
+    ) {
         self.id = id ?? UUID().uuidString
         self.script = script
         self.on = on
-        self.results = []
+        self.results = results
     }
 
     enum CodingKeys: String, CodingKey {
