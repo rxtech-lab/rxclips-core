@@ -39,4 +39,6 @@ public enum ExecuteError: Error {
     case unsupportedScriptType(ScriptType)
     case engineNotFound(ScriptType)
     case graphBuildingFailed
+    case parsingFailed
+    case notRootNode
 }

@@ -129,6 +129,10 @@ public enum Script: Identifiable, Codable {
             self.id = id ?? UUID().uuidString
             self.command = command
         }
+
+        public func updateId(id: String) -> BashScript {
+            return BashScript(id: id, command: self.command)
+        }
     }
 
     public struct JavaScriptScript: ScriptProtocol {
@@ -139,6 +143,10 @@ public enum Script: Identifiable, Codable {
         public init(id: String? = nil, file: String) {
             self.id = id ?? UUID().uuidString
             self.file = file
+        }
+
+        public func updateId(id: String) -> JavaScriptScript {
+            return JavaScriptScript(id: id, file: self.file)
         }
     }
 
@@ -151,6 +159,10 @@ public enum Script: Identifiable, Codable {
             self.id = id ?? UUID().uuidString
             self.files = files
         }
+
+        public func updateId(id: String) -> TemplateScript {
+            return TemplateScript(id: id, files: self.files)
+        }
     }
     case bash(BashScript)
     case javascript(JavaScriptScript)
@@ -161,6 +173,15 @@ public enum Script: Identifiable, Codable {
         case .bash(let bashScript): return bashScript.id
         case .javascript(let javascriptScript): return javascriptScript.id
         case .template(let templateScript): return templateScript.id
+        }
+    }
+
+    public func updateId(id: String) -> Script {
+        switch self {
+        case .bash(let bashScript): return .bash(bashScript.updateId(id: id))
+        case .javascript(let javascriptScript):
+            return .javascript(javascriptScript.updateId(id: id))
+        case .template(let templateScript): return .template(templateScript.updateId(id: id))
         }
     }
 }

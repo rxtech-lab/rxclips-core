@@ -223,6 +223,37 @@ extension GraphNode {
     }
 }
 
+extension GraphNode {
+    typealias OnNodeTraversed = (inout GraphNode) -> Void
+    // Traverse each node starting from the given node
+    // This method use dfs to traverse each node and the onTraverse callback will be called when new node been marked visited
+    internal func traverse(onTraverse: OnNodeTraversed) -> GraphNode {
+        var visited = Set<GraphNode>()
+
+        func dfs(_ current: inout GraphNode) {
+            // Skip if already visited
+            if visited.contains(current) {
+                return
+            }
+
+            // Mark as visited and trigger callback
+            visited.insert(current)
+            onTraverse(&current)
+
+            // Continue traversal to all children
+
+            for index in 0..<current.children.count {
+                dfs(&current.children[index])
+            }
+        }
+
+        // Start DFS from the given node
+        var copy = self
+        dfs(&copy)
+        return copy
+    }
+}
+
 /// Errors that can occur when working with graphs
 public enum GraphError: Error, CustomStringConvertible {
     case cyclicDependency([String])
