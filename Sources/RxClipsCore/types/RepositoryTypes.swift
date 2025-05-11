@@ -6,7 +6,6 @@ public enum Status: Codable {
     case success(finishedAt: Date)
     case failure(finishedAt: Date)
     case skipped
-    case pending
     // percentage is between 0 and 100 and maybe nil if not applicable
     case running(percentage: Double?)
     case unknown
@@ -25,7 +24,6 @@ public struct Repository: Codable {
     public var lifecycle: [LifecycleEvent]?
     public var jobs: [Job]
     public var environment: [String: String]?
-    public var runningStatus: RunningStatus
 
     public init(
         globalConfig: Configuration? = nil, permissions: [Permission]? = nil,
@@ -36,8 +34,6 @@ public struct Repository: Codable {
         self.lifecycle = lifecycle
         self.jobs = jobs
         self.environment = environment
-        self.runningStatus = RunningStatus(
-            status: .notStarted, startedAt: Date(), updatedAt: Date())
     }
 }
 
@@ -49,7 +45,6 @@ public struct Job: Codable, Identifiable {
     public var environment: [String: String]
     public var lifecycle: [LifecycleEvent]
     public var form: JSONSchema?
-    public var runningStatus: RunningStatus
 
     public init(
         id: String? = nil, name: String? = nil, steps: [Step] = [], needs: [String] = [],
@@ -63,8 +58,6 @@ public struct Job: Codable, Identifiable {
         self.environment = environment
         self.lifecycle = lifecycle
         self.form = form
-        self.runningStatus = RunningStatus(
-            status: .notStarted, startedAt: Date(), updatedAt: Date())
     }
 
     enum CodingKeys: String, CodingKey {
@@ -83,8 +76,6 @@ public struct Job: Codable, Identifiable {
         self.lifecycle =
             try container.decodeIfPresent([LifecycleEvent].self, forKey: .lifecycle) ?? []
         self.form = try container.decodeIfPresent(JSONSchema.self, forKey: .form)
-        self.runningStatus = RunningStatus(
-            status: .notStarted, startedAt: Date(), updatedAt: Date())
     }
 }
 
@@ -342,6 +333,14 @@ public struct Step: Identifiable, Codable {
     public var script: Script
     public var lifecycle: [LifecycleEvent]?
     public var results: [ExecuteResult]
+    /**
+     Represents the current execution status of the step.
+     - Initialized as `.notStarted`.
+     - Set to `.running` (with no percentage) once execution begins but before a response is received from the engine.
+     - Upon receiving a response:
+        - For the Bash engine: remains `.running(nil)` as progress percentage is not applicable.
+        - For the Template engine: `.running(percentage)` is updated based on the ratio of rendered templates to total templates.
+     */
     public var runningStatus: RunningStatus
 
     public init(

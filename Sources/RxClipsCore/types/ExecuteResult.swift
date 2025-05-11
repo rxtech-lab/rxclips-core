@@ -16,6 +16,11 @@ public enum ExecuteResult: Identifiable, Codable {
         public var id = UUID()
         public var scriptId: String
         public var filePath: String
+        /**
+         Represents the percentage of templates rendered from 0 to 100 and calculated by the
+         number of templates rendered divided by the total number of templates.
+         */
+        public var percentage: Double?
     }
 
     case bash(BashExecuteResult)

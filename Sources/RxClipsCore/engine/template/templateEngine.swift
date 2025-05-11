@@ -17,6 +17,7 @@ actor TemplateEngine: EngineProtocol {
         return AsyncThrowingStream { continuation in
             Task {
                 do {
+                    var completedFiles = 0
                     for file in script.files ?? [] {
                         let templateFile = try await loadTemplate(baseURL: baseURL, file: file.file)
                         let template = Template(templateString: templateFile)
@@ -24,8 +25,13 @@ actor TemplateEngine: EngineProtocol {
 
                         let outputPath = getOutputPath(file: file.output, cwd: cwd)
                         try writeOutput(output: rendered, path: outputPath)
+                        completedFiles += 1
                         continuation.yield(
-                            .template(.init(scriptId: script.id, filePath: outputPath)))
+                            .template(
+                                .init(
+                                    scriptId: script.id, filePath: outputPath,
+                                    percentage: Double(completedFiles)
+                                        / Double(script.files?.count ?? 1))))
                     }
 
                 } catch (let error) {
