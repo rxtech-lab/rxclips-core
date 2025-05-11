@@ -1,6 +1,22 @@
 import Foundation
 import JSONSchema
 
+public enum Status: Codable {
+    case notStarted
+    case success(finishedAt: Date)
+    case failure(finishedAt: Date)
+    case skipped
+    // percentage is between 0 and 100 and maybe nil if not applicable
+    case running(percentage: Double?)
+    case unknown
+}
+
+public struct RunningStatus: Codable {
+    public var status: Status
+    public var startedAt: Date
+    public var updatedAt: Date
+}
+
 // MARK: - Main Repository Schema
 public struct Repository: Codable {
     public var globalConfig: Configuration?
@@ -192,6 +208,7 @@ public struct LifecycleEvent: Identifiable, Codable, Comparable {
     public var script: Script
     public var on: LifecycleEventType
     public var results: [ExecuteResult]
+    public var runningStatus: RunningStatus
 
     public init(
         id: String? = nil, script: Script, on: LifecycleEventType, results: [ExecuteResult] = []
@@ -200,6 +217,8 @@ public struct LifecycleEvent: Identifiable, Codable, Comparable {
         self.script = script
         self.on = on
         self.results = results
+        self.runningStatus = RunningStatus(
+            status: .notStarted, startedAt: Date(), updatedAt: Date())
     }
 
     enum CodingKeys: String, CodingKey {
@@ -238,6 +257,9 @@ public struct LifecycleEvent: Identifiable, Codable, Comparable {
                 )
             }
         }
+
+        self.runningStatus = RunningStatus(
+            status: .notStarted, startedAt: Date(), updatedAt: Date())
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -311,6 +333,15 @@ public struct Step: Identifiable, Codable {
     public var script: Script
     public var lifecycle: [LifecycleEvent]?
     public var results: [ExecuteResult]
+    /**
+     Represents the current execution status of the step.
+     - Initialized as `.notStarted`.
+     - Set to `.running` (with no percentage) once execution begins but before a response is received from the engine.
+     - Upon receiving a response:
+        - For the Bash engine: remains `.running(nil)` as progress percentage is not applicable.
+        - For the Template engine: `.running(percentage)` is updated based on the ratio of rendered templates to total templates.
+     */
+    public var runningStatus: RunningStatus
 
     public init(
         id: String? = nil, name: String? = nil, form: JSONSchema? = nil,
@@ -323,6 +354,8 @@ public struct Step: Identifiable, Codable {
         self.script = script
         self.lifecycle = lifecycle
         self.results = []
+        self.runningStatus = RunningStatus(
+            status: .notStarted, startedAt: Date(), updatedAt: Date())
     }
 
     enum CodingKeys: String, CodingKey {
@@ -369,6 +402,9 @@ public struct Step: Identifiable, Codable {
                 )
             }
         }
+
+        self.runningStatus = RunningStatus(
+            status: .notStarted, startedAt: Date(), updatedAt: Date())
     }
 
     public func encode(to encoder: Encoder) throws {

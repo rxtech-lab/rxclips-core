@@ -219,6 +219,14 @@ public actor Engine {
                                 var formData: [String: Any] = [:]
 
                                 for step in steps {
+                                    // Initialize running status for the step that's about to execute
+                                    let now = Date()
+
+                                    // Update the running status in the appropriate step or lifecycle event
+                                    await initializeRunningStatus(
+                                        scriptId: step.id, in: &nodeToExecute.job,
+                                        startedAt: now)
+
                                     let stream = try await self.executeScript(
                                         script: step, formData: formData)
 
