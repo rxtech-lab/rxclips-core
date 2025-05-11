@@ -1,6 +1,23 @@
 import Foundation
 import JSONSchema
 
+public enum Status: Codable {
+    case notStarted
+    case success(finishedAt: Date)
+    case failure(finishedAt: Date)
+    case skipped
+    case pending
+    // percentage is between 0 and 100 and maybe nil if not applicable
+    case running(percentage: Double?)
+    case unknown
+}
+
+public struct RunningStatus: Codable {
+    public var status: Status
+    public var startedAt: Date
+    public var updatedAt: Date
+}
+
 // MARK: - Main Repository Schema
 public struct Repository: Codable {
     public var globalConfig: Configuration?
@@ -8,6 +25,7 @@ public struct Repository: Codable {
     public var lifecycle: [LifecycleEvent]?
     public var jobs: [Job]
     public var environment: [String: String]?
+    public var runningStatus: RunningStatus
 
     public init(
         globalConfig: Configuration? = nil, permissions: [Permission]? = nil,
@@ -18,6 +36,8 @@ public struct Repository: Codable {
         self.lifecycle = lifecycle
         self.jobs = jobs
         self.environment = environment
+        self.runningStatus = RunningStatus(
+            status: .notStarted, startedAt: Date(), updatedAt: Date())
     }
 }
 
@@ -29,6 +49,7 @@ public struct Job: Codable, Identifiable {
     public var environment: [String: String]
     public var lifecycle: [LifecycleEvent]
     public var form: JSONSchema?
+    public var runningStatus: RunningStatus
 
     public init(
         id: String? = nil, name: String? = nil, steps: [Step] = [], needs: [String] = [],
@@ -42,6 +63,8 @@ public struct Job: Codable, Identifiable {
         self.environment = environment
         self.lifecycle = lifecycle
         self.form = form
+        self.runningStatus = RunningStatus(
+            status: .notStarted, startedAt: Date(), updatedAt: Date())
     }
 
     enum CodingKeys: String, CodingKey {
@@ -60,6 +83,8 @@ public struct Job: Codable, Identifiable {
         self.lifecycle =
             try container.decodeIfPresent([LifecycleEvent].self, forKey: .lifecycle) ?? []
         self.form = try container.decodeIfPresent(JSONSchema.self, forKey: .form)
+        self.runningStatus = RunningStatus(
+            status: .notStarted, startedAt: Date(), updatedAt: Date())
     }
 }
 
@@ -192,6 +217,7 @@ public struct LifecycleEvent: Identifiable, Codable, Comparable {
     public var script: Script
     public var on: LifecycleEventType
     public var results: [ExecuteResult]
+    public var runningStatus: RunningStatus
 
     public init(
         id: String? = nil, script: Script, on: LifecycleEventType, results: [ExecuteResult] = []
@@ -200,6 +226,8 @@ public struct LifecycleEvent: Identifiable, Codable, Comparable {
         self.script = script
         self.on = on
         self.results = results
+        self.runningStatus = RunningStatus(
+            status: .notStarted, startedAt: Date(), updatedAt: Date())
     }
 
     enum CodingKeys: String, CodingKey {
@@ -238,6 +266,9 @@ public struct LifecycleEvent: Identifiable, Codable, Comparable {
                 )
             }
         }
+
+        self.runningStatus = RunningStatus(
+            status: .notStarted, startedAt: Date(), updatedAt: Date())
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -311,6 +342,7 @@ public struct Step: Identifiable, Codable {
     public var script: Script
     public var lifecycle: [LifecycleEvent]?
     public var results: [ExecuteResult]
+    public var runningStatus: RunningStatus
 
     public init(
         id: String? = nil, name: String? = nil, form: JSONSchema? = nil,
@@ -323,6 +355,8 @@ public struct Step: Identifiable, Codable {
         self.script = script
         self.lifecycle = lifecycle
         self.results = []
+        self.runningStatus = RunningStatus(
+            status: .notStarted, startedAt: Date(), updatedAt: Date())
     }
 
     enum CodingKeys: String, CodingKey {
@@ -369,6 +403,9 @@ public struct Step: Identifiable, Codable {
                 )
             }
         }
+
+        self.runningStatus = RunningStatus(
+            status: .notStarted, startedAt: Date(), updatedAt: Date())
     }
 
     public func encode(to encoder: Encoder) throws {
