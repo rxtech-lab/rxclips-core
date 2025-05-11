@@ -24,7 +24,8 @@ actor TemplateEngine: EngineProtocol {
 
                         let outputPath = getOutputPath(file: file.output, cwd: cwd)
                         try writeOutput(output: rendered, path: outputPath)
-                        continuation.yield(.template(.init(filePath: outputPath)))
+                        continuation.yield(
+                            .template(.init(scriptId: script.id, filePath: outputPath)))
                     }
 
                 } catch (let error) {

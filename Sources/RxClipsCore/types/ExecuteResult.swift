@@ -14,6 +14,7 @@ public enum ExecuteResult: Identifiable, Codable {
 
     public struct TemplateExecuteResult: Identifiable, Codable {
         public var id = UUID()
+        public var scriptId: String
         public var filePath: String
     }
 
@@ -32,10 +33,23 @@ public enum ExecuteResult: Identifiable, Codable {
         }
     }
 
+    public var scriptId: String {
+        switch self {
+        case .bash(let result):
+            return result.scriptId
+        case .template(let result):
+            return result.scriptId
+        case .nextStep(let result):
+            return result.scriptId
+        }
+    }
 }
 
 public enum ExecuteError: Error {
     case executionFailed(String)
     case unsupportedScriptType(ScriptType)
     case engineNotFound(ScriptType)
+    case graphBuildingFailed
+    case parsingFailed
+    case notRootNode
 }
