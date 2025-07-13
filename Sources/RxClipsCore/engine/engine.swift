@@ -244,19 +244,42 @@ public actor Engine {
     internal let baseURL: URL
     internal var eventListeners:
         [String: [(id: UUID, continuation: CheckedContinuation<[String: Any], Never>)]] = [:]
+    internal var formRequestCallback: ((ExecuteResult.FormRequestExecuteResult) async -> [String: Any])?
+    internal var pendingFormRequests: [String: CheckedContinuation<[String: Any], Never>] = [:]
 
     /// Initialize the engine with a repository
     /// @param repository The repository to execute
     /// @param cwd The current working directory
-    /// @param engines List of script engines to use for execution
+    /// @param baseURL The base URL for template resolution
+    /// @param formRequestCallback Async callback for handling form requests from external app
     public init(
         repository: Repository,
         cwd: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
-        baseURL: URL
+        baseURL: URL,
+        formRequestCallback: ((ExecuteResult.FormRequestExecuteResult) async -> [String: Any])? = nil
     ) {
         self.repository = repository
         self.cwd = cwd
         self.baseURL = baseURL
+        self.formRequestCallback = formRequestCallback
+    }
+
+    /// Wait for form data response with the given unique ID
+    /// @param uniqueId The unique identifier for the form request
+    /// @return The form data as key-value pairs
+    public func waitForFormData(uniqueId: String) async -> [String: Any] {
+        return await withCheckedContinuation { continuation in
+            pendingFormRequests[uniqueId] = continuation
+        }
+    }
+
+    /// Provide form data response for a pending form request
+    /// @param uniqueId The unique identifier for the form request
+    /// @param formData The form data to provide
+    public func provideFormData(uniqueId: String, formData: [String: Any]) {
+        if let continuation = pendingFormRequests.removeValue(forKey: uniqueId) {
+            continuation.resume(returning: formData)
+        }
     }
 
     /// Parse the repository spec into a list of executable steps
@@ -350,10 +373,63 @@ public actor Engine {
                             do {
                                 // Execute each step in the job
                                 let steps = nodeToExecute.job.toExecutionStep()
-                                //TODO: Emit ask for form data event and wait for response
-                                var formData: [String: Any] = [:]
+                                
+                                // Check if job has a form and handle it first
+                                var jobFormData: [String: Any] = [:]
+                                if let jobForm = nodeToExecute.job.form {
+                                    let uniqueId = "job_\(nodeToExecute.job.id)_\(UUID().uuidString)"
+                                    let formRequest = ExecuteResult.FormRequestExecuteResult(
+                                        scriptId: nodeToExecute.job.id,
+                                        uniqueId: uniqueId,
+                                        schema: jobForm
+                                    )
+                                    
+                                    // Emit form request event
+                                    continuation.yield(.formRequest(formRequest))
+                                    
+                                    // Wait for form data using callback or direct waiting
+                                    if let callback = self.formRequestCallback {
+                                        jobFormData = await callback(formRequest)
+                                    } else {
+                                        jobFormData = await self.waitForFormData(uniqueId: uniqueId)
+                                    }
+                                }
 
-                                for step in steps {
+                                for (_, step) in steps.enumerated() {
+                                    // Find the corresponding Step object to check for form
+                                    // The step variable here is a Script, we need to find the original Step that contains this script
+                                    let originalStep = nodeToExecute.job.steps.first { originalStep in
+                                        // Check if this step's script matches, or if any of its lifecycle scripts match
+                                        if originalStep.script.id == step.id {
+                                            return true
+                                        }
+                                        // Also check lifecycle scripts
+                                        return originalStep.lifecycle?.contains { $0.script.id == step.id } ?? false
+                                    }
+                                    var stepFormData: [String: Any] = jobFormData
+                                    
+                                    // Check if this step has a form
+                                    if let stepForm = originalStep?.form {
+                                        let uniqueId = "step_\(step.id)_\(UUID().uuidString)"
+                                        let formRequest = ExecuteResult.FormRequestExecuteResult(
+                                            scriptId: step.id,
+                                            uniqueId: uniqueId,
+                                            schema: stepForm
+                                        )
+                                        
+                                        // Emit form request event
+                                        continuation.yield(.formRequest(formRequest))
+                                        
+                                        // Wait for form data using callback or direct waiting
+                                        if let callback = self.formRequestCallback {
+                                            let newFormData = await callback(formRequest)
+                                            stepFormData.merge(newFormData) { _, new in new }
+                                        } else {
+                                            let newFormData = await self.waitForFormData(uniqueId: uniqueId)
+                                            stepFormData.merge(newFormData) { _, new in new }
+                                        }
+                                    }
+                                    
                                     // Initialize running status for the step that's about to execute
                                     let now = Date()
 
@@ -363,7 +439,7 @@ public actor Engine {
                                         startedAt: now)
 
                                     let stream = try await self.executeScript(
-                                        script: step, formData: formData)
+                                        script: step, formData: stepFormData)
 
                                     for try await result in stream {
                                         continuation.yield(result)
