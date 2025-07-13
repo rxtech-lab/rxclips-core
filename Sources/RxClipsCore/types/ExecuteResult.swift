@@ -57,4 +57,5 @@ public enum ExecuteError: Error {
     case graphBuildingFailed
     case parsingFailed
     case notRootNode
+    case invalidPath(String)
 }
