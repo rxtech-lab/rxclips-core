@@ -29,7 +29,7 @@ class EngineRunningStatusTests: XCTestCase {
         )
 
         // Initialize engine
-        let engine = Engine(repository: repository, baseURL: URL(string: "https://example.com")!)
+        let engine = Engine(repository: repository)
 
         // Get the execution stream
         let executeStream = try await engine.execute()
@@ -112,8 +112,11 @@ class EngineRunningStatusTests: XCTestCase {
             ]
         )
 
+        // Create a simple repository source that can handle local files
+        let repositorySource = LocalFileRepositorySource()
+        
         // Initialize engine
-        let engine = Engine(repository: repository, baseURL: URL(string: "https://example.com")!)
+        let engine = Engine(repository: repository, repositorySource: repositorySource, repositoryPath: "./")
 
         // Get the execution stream
         let executeStream = try await engine.execute()
@@ -179,7 +182,7 @@ class EngineRunningStatusTests: XCTestCase {
         )
 
         // Initialize engine
-        let engine = Engine(repository: repository, baseURL: URL(string: "https://example.com")!)
+        let engine = Engine(repository: repository)
 
         // Get the execution stream
         let executeStream = try await engine.execute()
@@ -210,6 +213,28 @@ class EngineRunningStatusTests: XCTestCase {
                     return
                 }
             }
+        }
+    }
+}
+
+// Simple repository source that handles local file URLs
+class LocalFileRepositorySource: RepositorySource {
+    func list(path: String?) async throws -> [RepositoryItem] {
+        return []
+    }
+    
+    func get(path: String) async throws -> Repository {
+        return Repository(jobs: [])
+    }
+    
+    func resolve(path: String, file: String) async throws -> String {
+        // For local files, return the file path as a file:// URL
+        if file.hasPrefix("file://") {
+            return file
+        } else if file.hasPrefix("/") {
+            return "file://\(file)"
+        } else {
+            return "file://\(path)/\(file)"
         }
     }
 }

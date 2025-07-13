@@ -70,7 +70,7 @@ class BashEngineTests: XCTestCase {
 
         let outputSequence = try await bashEngine.run(
             script: bashScript, cwd: URL(fileURLWithPath: "/tmp"),
-            baseURL: URL(string: "http://localhost:8080")!, formData: [:])
+            repositorySource: nil, repositoryPath: nil, formData: [:])
 
         var outputs: [ExecuteResult] = []
         for try await result in outputSequence {
@@ -100,7 +100,7 @@ class BashEngineTests: XCTestCase {
         do {
             let outputSequence = try await bashEngine.run(
                 script: bashScript, cwd: URL(fileURLWithPath: "/tmp"),
-                baseURL: URL(string: "http://localhost:8080")!, formData: [:])
+                repositorySource: nil, repositoryPath: nil, formData: [:])
             for try await _ in outputSequence {}
             XCTFail("Command should have failed but didn't")
         } catch {

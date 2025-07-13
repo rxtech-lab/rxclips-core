@@ -9,7 +9,10 @@ public actor BashEngine: EngineProtocol {
         self.commandExecutor = commandExecutor
     }
 
-    public func run(script: Script.BashScript, cwd: URL, baseURL: URL, formData: [String: Any])
+    public func run(
+        script: Script.BashScript, cwd: URL, repositorySource: RepositorySource?,
+        repositoryPath: String?, formData: [String: Any]
+    )
         throws
         -> any AsyncSequence<
             ExecuteResult, Error

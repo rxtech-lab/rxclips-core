@@ -36,7 +36,6 @@ class EngineFormSupportTests: XCTestCase {
         
         let engine = Engine(
             repository: repository,
-            baseURL: URL(string: "https://example.com")!,
             formRequestCallback: { formRequest in
                 formRequestReceived = formRequest
                 let data = ["name": "John Doe", "email": "john@example.com"]
@@ -112,7 +111,6 @@ class EngineFormSupportTests: XCTestCase {
         
         let engine = Engine(
             repository: repository,
-            baseURL: URL(string: "https://example.com")!,
             formRequestCallback: { formRequest in
                 callbackInvocations += 1
                 let data = ["message": "Test Message", "count": 5]
@@ -186,7 +184,6 @@ class EngineFormSupportTests: XCTestCase {
         
         let engine = Engine(
             repository: repository,
-            baseURL: URL(string: "https://example.com")!,
             formRequestCallback: { formRequest in
                 formRequestCount += 1
                 formRequests.append(formRequest)
@@ -255,8 +252,7 @@ class EngineFormSupportTests: XCTestCase {
         
         // Engine without callback - will use waitForFormData
         let engine = Engine(
-            repository: repository,
-            baseURL: URL(string: "https://example.com")!
+            repository: repository
         )
         
         var capturedUniqueId: String?
@@ -333,7 +329,6 @@ class EngineFormSupportTests: XCTestCase {
         
         let engine = Engine(
             repository: repository,
-            baseURL: URL(string: "https://example.com")!,
             formRequestCallback: { formRequest in
                 callbackCount += 1
                 receivedRequests.append(formRequest)
@@ -394,8 +389,7 @@ class EngineFormSupportTests: XCTestCase {
         )
         
         let engine = Engine(
-            repository: repository,
-            baseURL: URL(string: "https://example.com")!
+            repository: repository
             // No callback provided
         )
         
@@ -437,8 +431,7 @@ class EngineFormSupportTests: XCTestCase {
     
     func testWaitForFormDataAPI() async throws {
         let engine = Engine(
-            repository: Repository(jobs: []),
-            baseURL: URL(string: "https://example.com")!
+            repository: Repository(jobs: [])
         )
         
         let uniqueId = "test_unique_id"

@@ -53,7 +53,7 @@ class EngineExecuteTests: XCTestCase {
         )
 
         // Initialize engine
-        let engine = Engine(repository: repository, baseURL: URL(string: "https://example.com")!)
+        let engine = Engine(repository: repository)
 
         // Get the execution stream
         let executeStream = try await engine.execute()
@@ -158,7 +158,7 @@ class EngineExecuteTests: XCTestCase {
         )
 
         // Initialize engine
-        let engine = Engine(repository: repository, baseURL: URL(string: "https://example.com")!)
+        let engine = Engine(repository: repository)
 
         // Get the execution stream
         let executeStream = try await engine.execute()
@@ -180,5 +180,105 @@ class EngineExecuteTests: XCTestCase {
 
         // Should at least have processed the successful job
         XCTAssertFalse(repositories.isEmpty)
+    }
+    
+    func testExecuteWithRepositorySource() async throws {
+        // Create a mock repository source
+        let mockRepositorySource = MockEngineRepositorySource()
+        mockRepositorySource.templateContent = "Hello from Repository Source!"
+        
+        // Create a temporary directory for output
+        let temporaryDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "engine_repository_source_test")
+        try FileManager.default.createDirectory(
+            at: temporaryDirectory, withIntermediateDirectories: true, attributes: nil)
+        
+        // Create repository with template job
+        let repository = Repository(
+            globalConfig: .init(templatePath: "simple"),
+            permissions: [],
+            lifecycle: [],
+            jobs: [
+                .init(
+                    id: "template-job", name: "Template Job",
+                    steps: [
+                        .init(
+                            name: "Generate File",
+                            script: .template(.init(
+                                id: "template-step",
+                                files: [.init(file: "template.tmpl", output: "output.txt")]
+                            )),
+                            lifecycle: []
+                        )
+                    ],
+                    needs: [], environment: [:], lifecycle: [], form: nil
+                )
+            ]
+        )
+        
+        // Initialize engine with repository source
+        let engine = Engine(
+            repository: repository,
+            cwd: temporaryDirectory,
+            repositorySource: mockRepositorySource,
+            repositoryPath: repository.globalConfig?.templatePath
+        )
+        
+        // Get the execution stream
+        let executeStream = try await engine.execute()
+        
+        // Track outputs and repositories
+        var lastRepository: Repository?
+        var templateResults: [ExecuteResult.TemplateExecuteResult] = []
+        
+        for try await (updatedRepository, result) in executeStream {
+            lastRepository = updatedRepository
+            
+            if case .template(let templateResult) = result {
+                templateResults.append(templateResult)
+            }
+        }
+        
+        // Verify template was executed
+        XCTAssertFalse(templateResults.isEmpty, "Should have template execution results")
+        
+        // Verify output file was created
+        let outputPath = temporaryDirectory.appendingPathComponent("output.txt").path
+        XCTAssertTrue(FileManager.default.fileExists(atPath: outputPath), "Output file should exist")
+        
+        // Verify file content
+        let fileContent = try String(contentsOfFile: outputPath, encoding: .utf8)
+        XCTAssertEqual(fileContent, "Hello from Repository Source!", "File should contain resolved template")
+        
+        // Verify repository source was called correctly
+        XCTAssertEqual(mockRepositorySource.lastResolvedPath, "simple")
+        XCTAssertEqual(mockRepositorySource.lastResolvedFile, "template.tmpl")
+        
+        // Clean up
+        try FileManager.default.removeItem(atPath: temporaryDirectory.path)
+    }
+}
+
+// Mock Repository Source for Engine testing
+class MockEngineRepositorySource: RepositorySource {
+    var templateContent: String = ""
+    var lastResolvedPath: String?
+    var lastResolvedFile: String?
+    
+    func list(path: String?) async throws -> [RepositoryItem] {
+        return []
+    }
+    
+    func get(path: String) async throws -> Repository {
+        return Repository(jobs: [])
+    }
+    
+    func resolve(path: String, file: String) async throws -> String {
+        lastResolvedPath = path
+        lastResolvedFile = file
+        
+        // Return a data URL with the template content for testing
+        let base64Content = Data(templateContent.utf8).base64EncodedString()
+        return "data:text/plain;base64,\(base64Content)"
     }
 }

@@ -241,27 +241,36 @@ public actor Engine {
     internal var tailNode: GraphNode?
     internal let repository: Repository
     internal let cwd: URL
-    internal let baseURL: URL
+    internal var repositoryPath: String?
+    internal let repositorySource: RepositorySource?
     internal var eventListeners:
         [String: [(id: UUID, continuation: CheckedContinuation<[String: Any], Never>)]] = [:]
-    internal var formRequestCallback: ((ExecuteResult.FormRequestExecuteResult) async -> [String: Any])?
+    internal var formRequestCallback:
+        ((ExecuteResult.FormRequestExecuteResult) async -> [String: Any])?
     internal var pendingFormRequests: [String: CheckedContinuation<[String: Any], Never>] = [:]
 
     /// Initialize the engine with a repository
     /// @param repository The repository to execute
     /// @param cwd The current working directory
-    /// @param baseURL The base URL for template resolution
+    /// @param repositorySource Optional repository source for resolving file paths
     /// @param formRequestCallback Async callback for handling form requests from external app
     public init(
         repository: Repository,
         cwd: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
-        baseURL: URL,
-        formRequestCallback: ((ExecuteResult.FormRequestExecuteResult) async -> [String: Any])? = nil
+        repositorySource: RepositorySource? = nil,
+        repositoryPath: String? = nil,
+        formRequestCallback: ((ExecuteResult.FormRequestExecuteResult) async -> [String: Any])? =
+            nil
     ) {
         self.repository = repository
         self.cwd = cwd
-        self.baseURL = baseURL
+        self.repositorySource = repositorySource
+        self.repositoryPath = repositoryPath
         self.formRequestCallback = formRequestCallback
+    }
+
+    public func setRepositoryPath(path: String) {
+        self.repositoryPath = path
     }
 
     /// Wait for form data response with the given unique ID
@@ -317,11 +326,13 @@ public actor Engine {
         switch script {
         case .bash(let bashScript):
             return try await BashEngine(commandExecutor: BashCommandExecutor()).run(
-                script: bashScript, cwd: self.cwd, baseURL: self.baseURL, formData: formData)
+                script: bashScript, cwd: self.cwd, repositorySource: self.repositorySource,
+                repositoryPath: repositoryPath, formData: formData)
 
         case .template(let templateScript):
             return try await TemplateEngine().run(
-                script: templateScript, cwd: self.cwd, baseURL: self.baseURL, formData: formData)
+                script: templateScript, cwd: self.cwd, repositorySource: self.repositorySource,
+                repositoryPath: repositoryPath, formData: formData)
 
         default:
             throw ExecuteError.unsupportedScriptType(script.type)
@@ -373,20 +384,21 @@ public actor Engine {
                             do {
                                 // Execute each step in the job
                                 let steps = nodeToExecute.job.toExecutionStep()
-                                
+
                                 // Check if job has a form and handle it first
                                 var jobFormData: [String: Any] = [:]
                                 if let jobForm = nodeToExecute.job.form {
-                                    let uniqueId = "job_\(nodeToExecute.job.id)_\(UUID().uuidString)"
+                                    let uniqueId =
+                                        "job_\(nodeToExecute.job.id)_\(UUID().uuidString)"
                                     let formRequest = ExecuteResult.FormRequestExecuteResult(
                                         scriptId: nodeToExecute.job.id,
                                         uniqueId: uniqueId,
                                         schema: jobForm
                                     )
-                                    
+
                                     // Emit form request event
                                     continuation.yield(.formRequest(formRequest))
-                                    
+
                                     // Wait for form data using callback or direct waiting
                                     if let callback = self.formRequestCallback {
                                         jobFormData = await callback(formRequest)
@@ -398,16 +410,19 @@ public actor Engine {
                                 for (_, step) in steps.enumerated() {
                                     // Find the corresponding Step object to check for form
                                     // The step variable here is a Script, we need to find the original Step that contains this script
-                                    let originalStep = nodeToExecute.job.steps.first { originalStep in
+                                    let originalStep = nodeToExecute.job.steps.first {
+                                        originalStep in
                                         // Check if this step's script matches, or if any of its lifecycle scripts match
                                         if originalStep.script.id == step.id {
                                             return true
                                         }
                                         // Also check lifecycle scripts
-                                        return originalStep.lifecycle?.contains { $0.script.id == step.id } ?? false
+                                        return originalStep.lifecycle?.contains {
+                                            $0.script.id == step.id
+                                        } ?? false
                                     }
                                     var stepFormData: [String: Any] = jobFormData
-                                    
+
                                     // Check if this step has a form
                                     if let stepForm = originalStep?.form {
                                         let uniqueId = "step_\(step.id)_\(UUID().uuidString)"
@@ -416,20 +431,21 @@ public actor Engine {
                                             uniqueId: uniqueId,
                                             schema: stepForm
                                         )
-                                        
+
                                         // Emit form request event
                                         continuation.yield(.formRequest(formRequest))
-                                        
+
                                         // Wait for form data using callback or direct waiting
                                         if let callback = self.formRequestCallback {
                                             let newFormData = await callback(formRequest)
                                             stepFormData.merge(newFormData) { _, new in new }
                                         } else {
-                                            let newFormData = await self.waitForFormData(uniqueId: uniqueId)
+                                            let newFormData = await self.waitForFormData(
+                                                uniqueId: uniqueId)
                                             stepFormData.merge(newFormData) { _, new in new }
                                         }
                                     }
-                                    
+
                                     // Initialize running status for the step that's about to execute
                                     let now = Date()
 

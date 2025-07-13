@@ -31,7 +31,7 @@ class EngineExecuteGraphTests: XCTestCase {
         )
 
         // Initialize and parse repository
-        let engine = Engine(repository: repository, baseURL: URL(string: "https://example.com")!)
+        let engine = Engine(repository: repository)
         try await engine.parseRepository()
 
         // Execute and collect results
@@ -105,7 +105,7 @@ class EngineExecuteGraphTests: XCTestCase {
         )
 
         // Initialize and parse repository
-        let engine = Engine(repository: repository, baseURL: URL(string: "https://example.com")!)
+        let engine = Engine(repository: repository)
         try await engine.parseRepository()
 
         // Execute and collect results
@@ -177,7 +177,7 @@ class EngineExecuteGraphTests: XCTestCase {
         )
 
         // Initialize and parse repository
-        let engine = Engine(repository: repository, baseURL: URL(string: "https://example.com")!)
+        let engine = Engine(repository: repository)
         try await engine.parseRepository()
 
         // Execute and collect results
