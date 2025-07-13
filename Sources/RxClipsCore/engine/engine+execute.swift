@@ -70,6 +70,8 @@ extension Engine {
             status = .running(percentage: templateResult.percentage)
         case .nextStep:
             status = .success(finishedAt: now)
+        case .formRequest:
+            status = .running(percentage: nil)
         }
 
         job.lifecycle[index].runningStatus = RunningStatus(
@@ -92,6 +94,8 @@ extension Engine {
             status = .running(percentage: templateResult.percentage)
         case .nextStep:
             status = .success(finishedAt: now)
+        case .formRequest:
+            status = .running(percentage: nil)
         }
 
         // Store startedAt in local variable to avoid overlapping access
@@ -118,6 +122,8 @@ extension Engine {
             status = .running(percentage: templateResult.percentage)
         case .nextStep:
             status = .success(finishedAt: now)
+        case .formRequest:
+            status = .running(percentage: nil)
         }
 
         job.steps[index].runningStatus = RunningStatus(
