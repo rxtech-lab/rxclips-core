@@ -1,4 +1,5 @@
 import Foundation
+import JSONSchema
 
 extension Step {
     func toExecutionStep() -> [Script] {
@@ -89,6 +90,140 @@ extension GraphNode {
         repository.lifecycle = lifecycleEvents
 
         return repository
+    }
+
+    /// Looks up data within the graph structure using a human-readable path
+    /// - Parameter path: A string path in format "jobs[index].steps[index].property" or "jobs.id.steps.id.property"
+    /// - Returns: The value at the specified path
+    /// - Throws: An error if the path is invalid or the requested data doesn't exist
+    func lookup(path: String) throws -> Any {
+        // Split the path into components
+        let components = path.split(separator: ".")
+
+        // Start with this node as the current context
+        var currentContext: Any = self
+
+        for component in components {
+            // Check if we're accessing an array with index: jobs[0]
+            if let rangeStart = component.firstIndex(of: "["),
+                let rangeEnd = component.firstIndex(of: "]"),
+                rangeStart < rangeEnd
+            {
+
+                let name = component[..<rangeStart]
+                let indexString = component[component.index(after: rangeStart)..<rangeEnd]
+
+                guard let index = Int(indexString) else {
+                    throw ExecuteError.invalidPath("Invalid index in path: \(path)")
+                }
+
+                // Handle different array lookups
+                if name == "jobs" {
+                    if let graphNode = currentContext as? GraphNode {
+                        // For root node, we need to get its children (excluding root/tail)
+                        var jobNodes: [GraphNode] = []
+
+                        _ = graphNode.traverse { node in
+                            if !node.isRoot && !node.isTail {
+                                jobNodes.append(node)
+                            }
+                        }
+
+                        guard index < jobNodes.count else {
+                            throw ExecuteError.invalidPath("Job index out of bounds: \(index)")
+                        }
+
+                        currentContext = jobNodes[index]
+                    } else {
+                        throw ExecuteError.invalidPath("Cannot access jobs from this context")
+                    }
+                } else if name == "steps" {
+                    if let node = currentContext as? GraphNode {
+                        guard index < node.job.steps.count else {
+                            throw ExecuteError.invalidPath("Step index out of bounds: \(index)")
+                        }
+                        currentContext = node.job.steps[index]
+                    } else {
+                        throw ExecuteError.invalidPath("Cannot access steps from this context")
+                    }
+                } else {
+                    throw ExecuteError.invalidPath("Unknown array accessor: \(name)")
+                }
+            }
+            // Handle ID-based lookups like jobs.job1.steps.step1
+            else if component == "jobs" {
+                if let graphNode = currentContext as? GraphNode {
+                    // Next component should be the job ID
+                    guard components.count > 1 else {
+                        throw ExecuteError.invalidPath("Job ID missing in path")
+                    }
+
+                    // Store all jobs for ID-based lookup
+                    var jobNodes: [GraphNode] = []
+
+                    _ = graphNode.traverse { node in
+                        if !node.isRoot && !node.isTail {
+                            jobNodes.append(node)
+                        }
+                    }
+
+                    currentContext = jobNodes
+                }
+            } else if component == "steps" {
+                if let node = currentContext as? GraphNode {
+                    // Next component should be the step ID
+                    guard components.count > 1 else {
+                        throw ExecuteError.invalidPath("Step ID missing in path")
+                    }
+
+                    currentContext = node.job.steps
+                }
+            }
+            // Handle property access
+            else if component == "formData" {
+                if let step = currentContext as? Step {
+                    return [:]  // Return empty dictionary - formData represents user input, not the schema
+                } else if let node = currentContext as? GraphNode {
+                    return [:]  // Return empty dictionary - formData represents user input, not the schema
+                } else {
+                    throw ExecuteError.invalidPath("Cannot access formData from this context")
+                }
+            } else if component == "results" {
+                if let step = currentContext as? Step {
+                    return step.results ?? []
+                } else if let node = currentContext as? GraphNode {
+                    // Collect results from all steps in the job
+                    return node.job.steps.flatMap { $0.results ?? [] }
+                } else {
+                    throw ExecuteError.invalidPath("Cannot access results from this context")
+                }
+            } else if component.description.isEmpty == false {
+                let idString = component.description
+                // Handle ID-based lookup from an array of objects
+                if let jobNodes = currentContext as? [GraphNode] {
+                    // Find the job with matching ID
+                    if let matchingJob = jobNodes.first(where: { $0.job.id == idString }) {
+                        currentContext = matchingJob
+                    } else {
+                        throw ExecuteError.invalidPath("Job with ID '\(idString)' not found")
+                    }
+                } else if let steps = currentContext as? [Step] {
+                    // Find the step with matching ID
+                    if let matchingStep = steps.first(where: { $0.id == idString }) {
+                        currentContext = matchingStep
+                    } else {
+                        throw ExecuteError.invalidPath("Step with ID '\(idString)' not found")
+                    }
+                } else {
+                    // For cases where we're not in an array context, treat as unknown path component
+                    throw ExecuteError.invalidPath("Unknown path component: \(component)")
+                }
+            } else {
+                throw ExecuteError.invalidPath("Unknown path component: \(component)")
+            }
+        }
+
+        return currentContext
     }
 }
 

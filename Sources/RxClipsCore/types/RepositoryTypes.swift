@@ -24,16 +24,19 @@ public struct Repository: Codable {
     public var lifecycle: [LifecycleEvent]?
     public var jobs: [Job]
     public var environment: [String: String]?
+    public var form: JSONSchema?
 
     public init(
         globalConfig: Configuration? = nil, permissions: [Permission]? = nil,
-        lifecycle: [LifecycleEvent]? = [], jobs: [Job] = [], environment: [String: String]? = nil
+        lifecycle: [LifecycleEvent]? = [], jobs: [Job] = [], environment: [String: String]? = nil,
+        form: JSONSchema? = nil
     ) {
         self.globalConfig = globalConfig
         self.permissions = permissions
         self.lifecycle = lifecycle
         self.jobs = jobs
         self.environment = environment
+        self.form = form
     }
 }
 
