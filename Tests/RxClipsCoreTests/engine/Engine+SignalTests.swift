@@ -14,7 +14,7 @@ class EngineSignalTests: XCTestCase {
         )
 
         // Initialize engine
-        let engine = Engine(repository: repository, baseURL: URL(string: "https://example.com")!)
+        let engine = Engine(repository: repository)
 
         // Test data
         let testEventName = "test-event"
@@ -50,7 +50,7 @@ class EngineSignalTests: XCTestCase {
         )
 
         // Initialize engine
-        let engine = Engine(repository: repository, baseURL: URL(string: "https://example.com")!)
+        let engine = Engine(repository: repository)
 
         // Test event name
         let testEventName = "single-trigger-event"
@@ -97,7 +97,7 @@ class EngineSignalTests: XCTestCase {
         )
 
         // Initialize engine
-        let engine = Engine(repository: repository, baseURL: URL(string: "https://example.com")!)
+        let engine = Engine(repository: repository)
 
         // This should not throw any errors even though there are no listeners
         await engine.emit("no-listeners-event", data: ["test": true])

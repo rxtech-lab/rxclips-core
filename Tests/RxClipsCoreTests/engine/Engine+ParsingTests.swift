@@ -29,7 +29,7 @@ class EngineParseRepositoryTests: XCTestCase {
                     ], needs: [], environment: [:], lifecycle: [],
                     form: nil)
             ])
-        let engine = Engine(repository: repository, baseURL: URL(string: "https://example.com")!)
+        let engine = Engine(repository: repository)
         try await engine.parseRepository()
         let scriptExecutionSteps = await engine.rootNode!.children[0].executionScripts
         XCTAssertEqual(scriptExecutionSteps.count, 3)
@@ -57,7 +57,7 @@ class EngineParseRepositoryTests: XCTestCase {
             jobs: []
         )
 
-        let engine = Engine(repository: repository, baseURL: URL(string: "https://example.com")!)
+        let engine = Engine(repository: repository)
         try await engine.parseRepository()
 
         let rootSteps = await engine.rootNode!.job.steps
@@ -91,7 +91,7 @@ class EngineParseRepositoryTests: XCTestCase {
             ]
         )
 
-        let engine = Engine(repository: repository, baseURL: URL(string: "https://example.com")!)
+        let engine = Engine(repository: repository)
         try await engine.parseRepository()
         let scriptExecutionSteps = await engine.rootNode!.children[0].executionScripts
 
@@ -127,7 +127,7 @@ class EngineParseRepositoryTests: XCTestCase {
             ]
         )
 
-        let engine = Engine(repository: repository, baseURL: URL(string: "https://example.com")!)
+        let engine = Engine(repository: repository)
         try await engine.parseRepository()
         let scriptExecutionSteps = await engine.rootNode!.children[0].executionScripts
 
@@ -145,7 +145,7 @@ class EngineParseRepositoryTests: XCTestCase {
             jobs: []
         )
 
-        let engine = Engine(repository: repository, baseURL: URL(string: "https://example.com")!)
+        let engine = Engine(repository: repository)
         try await engine.parseRepository()
         let scriptExecutionSteps = await engine.rootNode!.executionScripts
 
@@ -192,7 +192,7 @@ class EngineParseRepositoryTests: XCTestCase {
             ]
         )
 
-        let engine = Engine(repository: repository, baseURL: URL(string: "https://example.com")!)
+        let engine = Engine(repository: repository)
         try await engine.parseRepository()
         let scriptExecutionSteps = await engine.rootNode!.children[0].executionScripts
         let rootSteps = await engine.rootNode!.job.steps

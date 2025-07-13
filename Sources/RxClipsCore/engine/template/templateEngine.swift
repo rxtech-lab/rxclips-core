@@ -8,7 +8,11 @@ enum TemplateError: Error {
 }
 
 actor TemplateEngine: EngineProtocol {
-    public func run(script: Script.TemplateScript, cwd: URL, baseURL: URL, formData: [String: Any])
+
+    public func run(
+        script: Script.TemplateScript, cwd: URL, repositorySource: RepositorySource?,
+        repositoryPath: String?, formData: [String: Any]
+    )
         async throws
         -> any AsyncSequence<
             ExecuteResult, Error
@@ -19,7 +23,9 @@ actor TemplateEngine: EngineProtocol {
                 do {
                     var completedFiles = 0
                     for file in script.files ?? [] {
-                        let templateFile = try await loadTemplate(baseURL: baseURL, file: file.file)
+                        let templateFile = try await loadTemplate(
+                            file: file.file, repositorySource: repositorySource,
+                            repositoryPath: repositoryPath)
                         let template = Template(templateString: templateFile)
                         let rendered = try template.render(formData)
 
@@ -43,13 +49,37 @@ actor TemplateEngine: EngineProtocol {
     }
 
     /// Load a template from local path or remote url
-    internal func loadTemplate(baseURL: URL, file: String) async throws -> String {
-        let url = baseURL.appendingPathComponent(file)
-        let (data, _) = try await URLSession.shared.data(from: url)
-        guard let string = String(data: data, encoding: .utf8) else {
-            throw TemplateError.invalidTemplate(file)
+    internal func loadTemplate(
+        file: String, repositorySource: RepositorySource? = nil, repositoryPath: String? = nil
+    ) async throws -> String {
+        let resolvedPath: String
+
+        if let repositorySource = repositorySource, let repositoryPath = repositoryPath {
+            // Use repository source to resolve the file path
+            resolvedPath = try await repositorySource.resolve(path: repositoryPath, file: file)
+            guard let url = URL(string: resolvedPath) else {
+                throw TemplateError.invalidUrl(resolvedPath)
+            }
+            
+            // Handle file:// URLs differently
+            if url.scheme == "file" {
+                let filePath = url.path
+                guard FileManager.default.fileExists(atPath: filePath) else {
+                    throw TemplateError.fileNotFound(filePath)
+                }
+                return try String(contentsOfFile: filePath, encoding: .utf8)
+            } else {
+                // Handle HTTP/HTTPS URLs
+                let (data, _) = try await URLSession.shared.data(from: url)
+                guard let string = String(data: data, encoding: .utf8) else {
+                    throw TemplateError.invalidTemplate(file)
+                }
+                return string
+            }
+        } else {
+            throw TemplateError.invalidUrl(
+                "No repository source or base URL provided for template resolution")
         }
-        return string
     }
 
     /// join the cwd and file path

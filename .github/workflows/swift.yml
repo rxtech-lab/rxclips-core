@@ -19,6 +19,11 @@ jobs:
         with:
           xcode-version: latest-stable
 
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+
       - name: Build and Test with Xcode
         run: swift test --enable-code-coverage
 
